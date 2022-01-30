@@ -36,7 +36,9 @@
 
 namespace leveldb {
 
-template <typename Key, class Comparator>
+// leveldb 实现调表结构
+
+template <typename Key, typename Comparator>
 class SkipList {
  private:
   struct Node;
@@ -52,59 +54,73 @@ class SkipList {
 
   // Insert key into the list.
   // REQUIRES: nothing that compares equal to key is currently in the list.
+  // 插入一个 key 到列表中
   void Insert(const Key& key);
 
   // Returns true iff an entry that compares equal to key is in the list.
+  // 判断一个 key 是否在列表中
   bool Contains(const Key& key) const;
 
   // Iteration over the contents of a skip list
+  // 内部类
+  // 循环遍历 skiplist 结构
   class Iterator {
    public:
     // Initialize an iterator over the specified list.
     // The returned iterator is not valid.
     explicit Iterator(const SkipList* list);
 
-    // Returns true iff the iterator is positioned at a valid node.
+    // 判断当前是否处于有效节点上
     bool Valid() const;
 
     // Returns the key at the current position.
     // REQUIRES: Valid()
+    // 返回当前位置对应的key
     const Key& key() const;
 
     // Advances to the next position.
     // REQUIRES: Valid()
+    // 将当前游标移动到下一个节点上
     void Next();
 
     // Advances to the previous position.
     // REQUIRES: Valid()
+    // 将当前游标移动到上一个节点上
     void Prev();
 
     // Advance to the first entry with a key >= target
+    // 将游标移动到第一个指定的key上
     void Seek(const Key& target);
 
     // Position at the first entry in list.
     // Final state of iterator is Valid() iff list is not empty.
+    // 将游标移动到第一个指定的key上
     void SeekToFirst();
 
     // Position at the last entry in list.
     // Final state of iterator is Valid() iff list is not empty.
+    // 将游标移动到最后一个key上
     void SeekToLast();
 
    private:
-    const SkipList* list_;
-    Node* node_;
+    const SkipList* list_;  // 调表指针
+    Node* node_;   // 调表中的某个元素
     // Intentionally copyable
   };
 
  private:
-  enum { kMaxHeight = 12 };
+  enum { kMaxHeight = 12 };  // 指针最高12层
 
+  // 获取最大指针数量
   inline int GetMaxHeight() const {
     return max_height_.load(std::memory_order_relaxed);
   }
 
+  // 生成一个新的调表节点
   Node* NewNode(const Key& key, int height);
   int RandomHeight();
+
+  // 比较两个 key 是否相同 
   bool Equal(const Key& a, const Key& b) const { return (compare_(a, b) == 0); }
 
   // Return true if key is greater than the data stored in "n"
@@ -126,9 +142,13 @@ class SkipList {
   Node* FindLast() const;
 
   // Immutable after construction
-  Comparator const compare_;
+  // key 比较器
+  Comparator const compare_; 
+
+  // node 节点资源分配器
   Arena* const arena_;  // Arena used for allocations of nodes
 
+  // 调表链接节点
   Node* const head_;
 
   // Modified only by Insert().  Read racily by readers, but stale
@@ -140,20 +160,22 @@ class SkipList {
 };
 
 // Implementation details follow
+// 调表节点结构
 template <typename Key, class Comparator>
 struct SkipList<Key, Comparator>::Node {
   explicit Node(const Key& k) : key(k) {}
 
   Key const key;
 
-  // Accessors/mutators for links.  Wrapped in methods so we can
-  // add the appropriate barriers as necessary.
+  // 返回第n个指针指向的一下个元素
   Node* Next(int n) {
     assert(n >= 0);
     // Use an 'acquire load' so that we observe a fully initialized
     // version of the returned Node.
     return next_[n].load(std::memory_order_acquire);
   }
+
+  // 设置第n个指针指向的下一个元素
   void SetNext(int n, Node* x) {
     assert(n >= 0);
     // Use a 'release store' so that anybody who reads through this
@@ -173,15 +195,20 @@ struct SkipList<Key, Comparator>::Node {
 
  private:
   // Array of length equal to the node height.  next_[0] is lowest level link.
+  // 指向后面节点的调表
+  // 数组长度不固定，动态分配
   std::atomic<Node*> next_[1];
 };
 
+// 创建具有n个指针，元素为key的,新的Node
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
     const Key& key, int height) {
   char* const node_memory = arena_->AllocateAligned(
-      sizeof(Node) + sizeof(std::atomic<Node*>) * (height - 1));
-  return new (node_memory) Node(key);
+      sizeof(Node) 
+      + sizeof(std::atomic<Node*>) * (height - 1));  // 动态调整数组长度，长度不固定 -1 因为Node中已经有一个元素
+  
+  return new (node_memory) Node(key); // ?
 }
 
 template <typename Key, class Comparator>
