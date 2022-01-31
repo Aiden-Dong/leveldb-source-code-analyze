@@ -1,4 +1,5 @@
 // Copyright (c) 2011 The LevelDB Authors. All rights reserved.
+// Copyright (c) 2011 The LevelDB Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file. See the AUTHORS file for names of contributors.
 
@@ -208,7 +209,7 @@ typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
       sizeof(Node) 
       + sizeof(std::atomic<Node*>) * (height - 1));  // 动态调整数组长度，长度不固定 -1 因为Node中已经有一个元素
   
-  return new (node_memory) Node(key); // ?
+  return new (node_memory) Node(key); // 使用定位 new 运算符
 }
 
 template <typename Key, class Comparator>
