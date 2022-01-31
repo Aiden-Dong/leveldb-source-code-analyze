@@ -154,6 +154,7 @@ class SkipList {
 
   // Modified only by Insert().  Read racily by readers, but stale
   // values are ok.
+  // 当前跳表的最高深度
   std::atomic<int> max_height_;  // Height of the entire list
 
   // Read/written only by Insert().
@@ -198,43 +199,54 @@ struct SkipList<Key, Comparator>::Node {
   // Array of length equal to the node height.  next_[0] is lowest level link.
   // 指向后面节点的调表
   // 数组长度不固定，动态分配
+  // next_[0] 是最低级的链表
   std::atomic<Node*> next_[1];
 };
 
 // 创建具有n个指针，元素为key的,新的Node
+// 使用 Arena 分配一个内存区域, 使用定位new运算符将 node 填充到该区域中
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
     const Key& key, int height) {
   char* const node_memory = arena_->AllocateAligned(
       sizeof(Node) 
-      + sizeof(std::atomic<Node*>) * (height - 1));  // 动态调整数组长度，长度不固定 -1 因为Node中已经有一个元素
+      + sizeof(std::atomic<Node*>) * (height - 1));  
+      // 动态调整数组长度，长度不固定 -1 因为Node中已经有一个元素
   
   return new (node_memory) Node(key); // 使用定位 new 运算符
 }
 
+
+// 初始化一个遍历器
 template <typename Key, class Comparator>
 inline SkipList<Key, Comparator>::Iterator::Iterator(const SkipList* list) {
   list_ = list;
   node_ = nullptr;
 }
 
+// 判断当前游标是否在一个有效节点上
+// 是否有效使用 空指针判断
 template <typename Key, class Comparator>
 inline bool SkipList<Key, Comparator>::Iterator::Valid() const {
   return node_ != nullptr;
 }
 
+// 获取当前游标指向节点的key元素
 template <typename Key, class Comparator>
 inline const Key& SkipList<Key, Comparator>::Iterator::key() const {
   assert(Valid());
   return node_->key;
 }
 
+// 获取当前节点的下一个节点 -> next_[0] 指针
 template <typename Key, class Comparator>
 inline void SkipList<Key, Comparator>::Iterator::Next() {
   assert(Valid());
   node_ = node_->Next(0);
 }
 
+// 获取当前节点的前一个节点
+// 基于跳表的前向遍历
 template <typename Key, class Comparator>
 inline void SkipList<Key, Comparator>::Iterator::Prev() {
   // Instead of using explicit "prev" links, we just search for the
@@ -246,16 +258,19 @@ inline void SkipList<Key, Comparator>::Iterator::Prev() {
   }
 }
 
+// 将游标移动到指定位置
 template <typename Key, class Comparator>
 inline void SkipList<Key, Comparator>::Iterator::Seek(const Key& target) {
   node_ = list_->FindGreaterOrEqual(target, nullptr);
 }
 
+// 将游标移动到首部位置
 template <typename Key, class Comparator>
 inline void SkipList<Key, Comparator>::Iterator::SeekToFirst() {
   node_ = list_->head_->Next(0);
 }
 
+// 将游标移动到尾部位置
 template <typename Key, class Comparator>
 inline void SkipList<Key, Comparator>::Iterator::SeekToLast() {
   node_ = list_->FindLast();
@@ -264,6 +279,7 @@ inline void SkipList<Key, Comparator>::Iterator::SeekToLast() {
   }
 }
 
+// 生成一个随机高度
 template <typename Key, class Comparator>
 int SkipList<Key, Comparator>::RandomHeight() {
   // Increase height with probability 1 in kBranching
@@ -277,25 +293,29 @@ int SkipList<Key, Comparator>::RandomHeight() {
   return height;
 }
 
+// 判断给定key 是否在对应的节点后方
 template <typename Key, class Comparator>
 bool SkipList<Key, Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
   // null n is considered infinite
   return (n != nullptr) && (compare_(n->key, key) < 0);
 }
 
+// 找到比指定key大的第一个元素，
+// 并且设置前置节点指针指向该元素
+// 主要提供给插入节点使用
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node*
-SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key,
-                                              Node** prev) const {
+SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key, Node** prev) const {
   Node* x = head_;
   int level = GetMaxHeight() - 1;
   while (true) {
     Node* next = x->Next(level);
-    if (KeyIsAfterNode(key, next)) {
-      // Keep searching in this list
+
+    if (KeyIsAfterNode(key, next)) {   // 判断 key 是否是next 对应的下一个节点
       x = next;
     } else {
-      if (prev != nullptr) prev[level] = x;
+      if (prev != nullptr) prev[level] = x;  //
+
       if (level == 0) {
         return next;
       } else {
@@ -306,6 +326,9 @@ SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key,
   }
 }
 
+// 重点内容 :
+// 跳表的前向查表过程
+// 从最大跨度依次减少跨度，直到找到对应的key
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node*
 SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
@@ -314,11 +337,10 @@ SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
   while (true) {
     assert(x == head_ || compare_(x->key, key) < 0);
     Node* next = x->Next(level);
-    if (next == nullptr || compare_(next->key, key) >= 0) {
+    if (next == nullptr || compare_(next->key, key) >= 0) { // 如果相等直接返回结果不就完了，为啥要依次递减
       if (level == 0) {
         return x;
       } else {
-        // Switch to next list
         level--;
       }
     } else {
@@ -327,6 +349,7 @@ SkipList<Key, Comparator>::FindLessThan(const Key& key) const {
   }
 }
 
+// 基于前向遍历获取最后一个元素
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::FindLast()
     const {
@@ -347,29 +370,42 @@ typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::FindLast()
   }
 }
 
+
+/***
+ * 初始化一个跳表结构 
+ */
 template <typename Key, class Comparator>
 SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena* arena)
     : compare_(cmp),
       arena_(arena),
-      head_(NewNode(0 /* any key will do */, kMaxHeight)),
+      head_(NewNode(0 /* any key will do */, kMaxHeight)), // 首部初始化一个为0的的常量key
       max_height_(1),
       rnd_(0xdeadbeef) {
   for (int i = 0; i < kMaxHeight; i++) {
-    head_->SetNext(i, nullptr);
+    head_->SetNext(i, nullptr); // 初始化首部指针
   }
 }
 
+
+// 重点内容 : 
+// 填充一个元素到跳表结构中
 template <typename Key, class Comparator>
 void SkipList<Key, Comparator>::Insert(const Key& key) {
   // TODO(opt): We can use a barrier-free variant of FindGreaterOrEqual()
   // here since Insert() is externally synchronized.
-  Node* prev[kMaxHeight];
+  
+  Node* prev[kMaxHeight];  // pre 是一个未初始化的指针
+
+  // prev 的 每个level指针指向对应级的下一个大于等于key的node节点
+  // node x 返回大于等于key的第一个node节点
   Node* x = FindGreaterOrEqual(key, prev);
 
   // Our data structure does not allow duplicate insertion
   assert(x == nullptr || !Equal(key, x->key));
 
-  int height = RandomHeight();
+  int height = RandomHeight(); // 生成一个随机高度
+
+  // 如果深度超过了当前最高的跳表指针深度，则需要将头部node指向改新node
   if (height > GetMaxHeight()) {
     for (int i = GetMaxHeight(); i < height; i++) {
       prev[i] = head_;
@@ -384,6 +420,7 @@ void SkipList<Key, Comparator>::Insert(const Key& key) {
     max_height_.store(height, std::memory_order_relaxed);
   }
 
+  // 节点插入列表
   x = NewNode(key, height);
   for (int i = 0; i < height; i++) {
     // NoBarrier_SetNext() suffices since we will add a barrier when
@@ -393,6 +430,7 @@ void SkipList<Key, Comparator>::Insert(const Key& key) {
   }
 }
 
+// 判断一个key是否在跳表中
 template <typename Key, class Comparator>
 bool SkipList<Key, Comparator>::Contains(const Key& key) const {
   Node* x = FindGreaterOrEqual(key, nullptr);

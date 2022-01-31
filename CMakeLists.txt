@@ -10,8 +10,11 @@ add_subdirectory("thrid_party/leveldb")
 
 add_executable(leveldb_study ${SRC_LIST})
 
+include_directories("${CMAKE_SOURCE_DIR}/thrid_party/leveldb")
+
+enable_testing()
 # leveldb
 target_link_libraries(leveldb_study leveldb)
 
 # googletest
-# target_link_libraries(leveldb_study gtest)
+target_link_libraries(leveldb_study gtest_main)

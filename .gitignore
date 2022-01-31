@@ -95,4 +95,8 @@ _deps
 # External projects
 *-prefix/
 
+.idea/
+cmake-build-debug/
+
+
 # End of https://www.toptal.com/developers/gitignore/api/c,c++,cmake
