@@ -27,8 +27,14 @@ void test_new_operator();
 // 测试跳表
 void test_skip_list();
 
+// 测试内存对齐
+void test_mem_align();
+
 int main(int argc, char*argv[]){
-    test_skip_list();
+
+  test_mem_align();
+
+  return 0;
 }
 
 void test_leveldb_normal(){
@@ -101,6 +107,18 @@ void test_skip_list(){
     list.Insert(289);
     list.Insert(152);
     list.Insert(94);
+}
+
+void test_mem_align(){
+  std::cout << sizeof(void *) << std::endl;
+  std::cout << sizeof(int) <<  std::endl;
+  std::cout << sizeof(short) << std::endl;
 
 
+  struct node_struct{
+    int a;
+    short b;
+  };
+
+  std::cout << sizeof(node_struct) << std::endl;
 }
