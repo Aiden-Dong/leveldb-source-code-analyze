@@ -9,6 +9,9 @@
 
 namespace leveldb {
 
+/***
+ * leveldb bloom 过滤器实现
+ */
 namespace {
 static uint32_t BloomHash(const Slice& key) {
   return Hash(key.data(), key.size(), 0xbc9f1d34);
@@ -25,6 +28,12 @@ class BloomFilterPolicy : public FilterPolicy {
 
   const char* Name() const override { return "leveldb.BuiltinBloomFilter2"; }
 
+  /***
+   * 生成 BloomFliter， 保存到 dst 当中
+   * @param keys
+   * @param n
+   * @param dst
+   */
   void CreateFilter(const Slice* keys, int n, std::string* dst) const override {
     // Compute bloom filter size (in both bits and bytes)
     size_t bits = n * bits_per_key_;
@@ -33,19 +42,25 @@ class BloomFilterPolicy : public FilterPolicy {
     // by enforcing a minimum bloom filter length.
     if (bits < 64) bits = 64;
 
+    // 向上对齐
     size_t bytes = (bits + 7) / 8;
     bits = bytes * 8;
 
-    const size_t init_size = dst->size();
-    dst->resize(init_size + bytes, 0);
+    const size_t init_size = dst->size();     // 获取原始大小
+    dst->resize(init_size + bytes, 0);  // 扩大新的位大小， 并且填空新的元素为 0[初始化 bloom 过滤器]
     dst->push_back(static_cast<char>(k_));  // Remember # of probes in filter
-    char* array = &(*dst)[init_size];
+
+    char* array = &(*dst)[init_size];  // 获取到 bloom 过滤器的首部位置
+
     for (int i = 0; i < n; i++) {
       // Use double-hashing to generate a sequence of hash values.
       // See analysis in [Kirsch,Mitzenmacher 2006].
+
       uint32_t h = BloomHash(keys[i]);
+
       const uint32_t delta = (h >> 17) | (h << 15);  // Rotate right 17 bits
-      for (size_t j = 0; j < k_; j++) {
+
+      for (size_t j = 0; j < k_; j++) {  // k_ 个 hash 函数
         const uint32_t bitpos = h % bits;
         array[bitpos / 8] |= (1 << (bitpos % 8));
         h += delta;
@@ -80,8 +95,8 @@ class BloomFilterPolicy : public FilterPolicy {
   }
 
  private:
-  size_t bits_per_key_;
-  size_t k_;
+  size_t bits_per_key_;   //
+  size_t k_;              // k 个 hash 函数, 默认 30 个
 };
 }  // namespace
 
