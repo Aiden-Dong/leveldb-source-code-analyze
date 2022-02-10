@@ -32,17 +32,6 @@ void test_mem_align();
 
 int main(int argc, char*argv[]){
 
-  std::string str{"hello world"};
-
-  std::cout << str << std::endl
-    << str.size() << std::endl;
-
-  str.resize(20, 'd');
-
-  std::cout << str << std::endl;
-
-  str.push_back('e');
-  std::cout << str << std::endl;
 
   return 0;
 }
