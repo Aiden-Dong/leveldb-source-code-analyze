@@ -32,7 +32,6 @@ void test_mem_align();
 
 int main(int argc, char*argv[]){
 
-
   return 0;
 }
 

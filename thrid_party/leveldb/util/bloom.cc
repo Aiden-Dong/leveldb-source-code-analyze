@@ -37,7 +37,7 @@ class BloomFilterPolicy : public FilterPolicy {
   void CreateFilter(const Slice* keys, int n, std::string* dst) const override {
 
     /***
-     * 预估至少需要多少位来存储这些 key 的bloom filter 标识
+     * 计算需要多少位来存储这些 key 的bloom filter 标识
      */
     size_t bits = n * bits_per_key_;
     if (bits < 64) bits = 64;
