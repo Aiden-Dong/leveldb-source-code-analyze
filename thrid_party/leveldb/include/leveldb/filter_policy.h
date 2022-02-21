@@ -34,12 +34,7 @@ class LEVELDB_EXPORT FilterPolicy {
   // passed to methods of this type.
   virtual const char* Name() const = 0;
 
-  // keys[0,n-1] contains a list of keys (potentially with duplicates)
-  // that are ordered according to the user supplied comparator.
-  // Append a filter that summarizes keys[0,n-1] to *dst.
-  //
-  // Warning: do not change the initial contents of *dst.  Instead,
-  // append the newly constructed filter to *dst.
+  // 创建一个过滤器
   virtual void CreateFilter(const Slice* keys, int n,
                             std::string* dst) const = 0;
 
@@ -48,6 +43,7 @@ class LEVELDB_EXPORT FilterPolicy {
   // the key was in the list of keys passed to CreateFilter().
   // This method may return true or false if the key was not on the
   // list, but it should aim to return false with a high probability.
+  // 判断 filter 是否在 key 中
   virtual bool KeyMayMatch(const Slice& key, const Slice& filter) const = 0;
 };
 

@@ -61,6 +61,13 @@ inline void EncodeFixed32(char* dst, uint32_t value) {
   buffer[3] = static_cast<uint8_t>(value >> 24);
 }
 
+/***
+ * 按字节拷贝,
+ * 防止主机有大端字节与小端字节的差异
+ * uint64 低位，存储char 低位， 高维往高维存储， 统一小端字节
+ * @param dst
+ * @param value
+ */
 inline void EncodeFixed64(char* dst, uint64_t value) {
   uint8_t* const buffer = reinterpret_cast<uint8_t*>(dst);
 
@@ -88,6 +95,12 @@ inline uint32_t DecodeFixed32(const char* ptr) {
          (static_cast<uint32_t>(buffer[3]) << 24);
 }
 
+/***
+ * char * 转 uint64
+ * 避免大端小端问题
+ * @param ptr
+ * @return
+ */
 inline uint64_t DecodeFixed64(const char* ptr) {
   const uint8_t* const buffer = reinterpret_cast<const uint8_t*>(ptr);
 

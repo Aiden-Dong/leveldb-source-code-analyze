@@ -6,12 +6,11 @@
 
 namespace leveldb {
 
- // block 大小 4096
+ // block 大小 4096  -- 4K
 static const int kBlockSize = 4096;
 
 Arena::Arena()
     : alloc_ptr_(nullptr), alloc_bytes_remaining_(0), memory_usage_(0) {}
-
 
 Arena::~Arena() {
   for (size_t i = 0; i < blocks_.size(); i++) {
@@ -20,7 +19,9 @@ Arena::~Arena() {
 }
 
 char* Arena::AllocateFallback(size_t bytes) {
+
   if (bytes > kBlockSize / 4) {
+
     // 如果申请的内存大于 1/4 block_size
     // 直接分配一个 大小为 bytes 的内存块
     char* result = AllocateNewBlock(bytes);

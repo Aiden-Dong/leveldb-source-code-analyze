@@ -30,8 +30,11 @@ void test_skip_list();
 // 测试内存对齐
 void test_mem_align();
 
-int main(int argc, char*argv[]){
+// 测试大端与小端字节
+void test_bytes();
 
+int main(int argc, char*argv[]){
+  test_bytes();
   return 0;
 }
 
@@ -119,4 +122,33 @@ void test_mem_align(){
   };
 
   std::cout << sizeof(node_struct) << std::endl;
+}
+
+void test_bytes(){
+  // 数组往高位生长
+  int8_t arr[8] {0,0,0,0,0,0,0,1};
+
+  for (int i = 0; i < 8; ++i) {
+    std::cout << static_cast<int>(arr[i])  << ":" << static_cast<const void *>(&arr[i]) << std::endl;
+  }
+  /***
+   * 0:0x7ffee9106670
+   * 0:0x7ffee9106671
+   * 0:0x7ffee9106672
+   * 0:0x7ffee9106673
+   * 0:0x7ffee9106674
+   * 0:0x7ffee9106675
+   * 0:0x7ffee9106676
+   * 1:0x7ffee9106677
+   */
+
+  uint64_t *p(reinterpret_cast<uint64_t *>(arr));
+
+
+  std::cout << std::hex << *p << std::endl;
+  // 输出 : 01 00 00 00 00 00 00 00
+
+  std::cout << std::endl;
+
+
 }

@@ -28,11 +28,12 @@ class BytewiseComparatorImpl : public Comparator {
     return a.compare(b);
   }
 
-  void FindShortestSeparator(std::string* start,
-                             const Slice& limit) const override {
+  void FindShortestSeparator(std::string* start, const Slice& limit) const override {
     // Find length of common prefix
     size_t min_length = std::min(start->size(), limit.size());
     size_t diff_index = 0;
+
+    // 去除掉两者公共部分
     while ((diff_index < min_length) &&
            ((*start)[diff_index] == limit[diff_index])) {
       diff_index++;
@@ -40,12 +41,15 @@ class BytewiseComparatorImpl : public Comparator {
 
     if (diff_index >= min_length) {
       // Do not shorten if one string is a prefix of the other
+      // 表示 start 与 limit 是包含关系（字符包含）
     } else {
-      uint8_t diff_byte = static_cast<uint8_t>((*start)[diff_index]);
-      if (diff_byte < static_cast<uint8_t>(0xff) &&
-          diff_byte + 1 < static_cast<uint8_t>(limit[diff_index])) {
+      // 标识 start 与 limit 不是包含关系， 有却别
+      uint8_t diff_byte = static_cast<uint8_t>((*start)[diff_index]);  //获得 start 的第一个区别位
+
+      if (diff_byte < static_cast<uint8_t>(0xff) &&  // 可能相等
+          diff_byte + 1 < static_cast<uint8_t>(limit[diff_index])) { // start[diff_index] +1 < limit[diff_index])
         (*start)[diff_index]++;
-        start->resize(diff_index + 1);
+        start->resize(diff_index + 1); // 截断字符串到能比较两者不同的最短字符串
         assert(Compare(*start, limit) < 0);
       }
     }
