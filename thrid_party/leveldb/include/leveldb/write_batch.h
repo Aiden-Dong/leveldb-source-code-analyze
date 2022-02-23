@@ -30,6 +30,11 @@ namespace leveldb {
 
 class Slice;
 
+/****
+ * 基本数据结构 :
+ *  | SeqNum(8字节) | Key个数(4字节) | kTypeValue(1字节)    | key 长度(变长32位) | key 具体数据 | value 长度(变长32位) | value 具体数据 | ...
+ *  ............................... | kTypeDeletion(1字节) | key 长度(变长32位) | key 具体数据 | ...
+ */
 class LEVELDB_EXPORT WriteBatch {
  public:
   class LEVELDB_EXPORT Handler {
@@ -41,40 +46,34 @@ class LEVELDB_EXPORT WriteBatch {
 
   WriteBatch();
 
-  // Intentionally copyable.
   WriteBatch(const WriteBatch&) = default;
   WriteBatch& operator=(const WriteBatch&) = default;
 
   ~WriteBatch();
 
-  // Store the mapping "key->value" in the database.
+  // 将 Key->value 写入数据库
   void Put(const Slice& key, const Slice& value);
 
-  // If the database contains a mapping for "key", erase it.  Else do nothing.
+  // 以追加写的方式删除 key
   void Delete(const Slice& key);
 
-  // Clear all updates buffered in this batch.
+  // 清理这个 batch 的所有内容
   void Clear();
 
-  // The size of the database changes caused by this batch.
-  //
-  // This number is tied to implementation details, and may change across
-  // releases. It is intended for LevelDB usage metrics.
+  // 获取数据的内存占用大小
   size_t ApproximateSize() const;
 
-  // Copies the operations in "source" to this batch.
-  //
-  // This runs in O(source size) time. However, the constant factor is better
-  // than calling Iterate() over the source batch with a Handler that replicates
-  // the operations into this batch.
+  // 将 source 的内容全量追加到 this 中
   void Append(const WriteBatch& source);
 
-  // Support for iterating over the contents of a batch.
+  // 遍历所有的keyValue, 并交给 handler 填充
+  // MemTableInserter 子类 对应的 memtable 操作
   Status Iterate(Handler* handler) const;
 
  private:
-  friend class WriteBatchInternal;
+  friend class WriteBatchInternal; // 内部工具性质辅助类
 
+  // writebatch 具体数据
   std::string rep_;  // See comment in write_batch.cc for the format of rep_
 };
 

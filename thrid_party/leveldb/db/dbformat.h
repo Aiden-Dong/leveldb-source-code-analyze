@@ -159,15 +159,13 @@ class InternalKeyComparator : public Comparator {
 
   /***
    * InternalKey 比较器 :
-   *    a > b : -1
-   *    a < b : 1
+   *    a > b : 1
+   *    a < b : -1
    *    a = b : 0
    * @return
    */
   int Compare(const Slice& a, const Slice& b) const override;
-  // ? 啥意思
   void FindShortestSeparator(std::string* start, const Slice& limit) const override;
-  // ？啥意思
   void FindShortSuccessor(std::string* key) const override;
   const Comparator* user_comparator() const { return user_comparator_; }
 

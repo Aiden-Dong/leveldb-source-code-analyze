@@ -33,8 +33,10 @@ void test_mem_align();
 // 测试大端与小端字节
 void test_bytes();
 
+
 int main(int argc, char*argv[]){
-  test_bytes();
+
+
   return 0;
 }
 
@@ -127,6 +129,8 @@ void test_mem_align(){
 void test_bytes(){
   // 数组往高位生长
   int8_t arr[8] {0,0,0,0,0,0,0,1};
+  uint32_t a(1);
+
 
   for (int i = 0; i < 8; ++i) {
     std::cout << static_cast<int>(arr[i])  << ":" << static_cast<const void *>(&arr[i]) << std::endl;
@@ -143,6 +147,7 @@ void test_bytes(){
    */
 
   uint64_t *p(reinterpret_cast<uint64_t *>(arr));
+
 
 
   std::cout << std::hex << *p << std::endl;

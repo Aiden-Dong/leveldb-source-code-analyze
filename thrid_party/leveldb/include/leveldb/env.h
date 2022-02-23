@@ -57,198 +57,114 @@ class LEVELDB_EXPORT Env {
 
   virtual ~Env();
 
-  // Return a default environment suitable for the current operating
-  // system.  Sophisticated users may wish to provide their own Env
-  // implementation instead of relying on this default environment.
-  //
-  // The result of Default() belongs to leveldb and must never be deleted.
+  // 默认 PosixDefaultEnv
   static Env* Default();
 
-  // Create an object that sequentially reads the file with the specified name.
-  // On success, stores a pointer to the new file in *result and returns OK.
-  // On failure stores nullptr in *result and returns non-OK.  If the file does
-  // not exist, returns a non-OK status.  Implementations should return a
-  // NotFound status when the file does not exist.
-  //
+  // 创建一个顺序读取文件(fname)的对象
+  // 操作对象存储到 result 中
+  // 通过 Status 返回值告知创建是否成功
+  // 外部同步
+  virtual Status NewSequentialFile(const std::string& fname, SequentialFile** result) = 0;
+
+  // 创建一个随机读取文件(fname)的对象
+  // 操作对象存储到 result 中
+  // 通过 Status 返回值告知创建是否成功
+  // 线程安全.
+  virtual Status NewRandomAccessFile(const std::string& fname, RandomAccessFile** result) = 0;
+
+  // 创建一个新的文件(fname, 如果已存在则删除已存在文件)，并返回一个写对象
   // The returned file will only be accessed by one thread at a time.
-  virtual Status NewSequentialFile(const std::string& fname,
-                                   SequentialFile** result) = 0;
+  virtual Status NewWritableFile(const std::string& fname, WritableFile** result) = 0;
 
-  // Create an object supporting random-access reads from the file with the
-  // specified name.  On success, stores a pointer to the new file in
-  // *result and returns OK.  On failure stores nullptr in *result and
-  // returns non-OK.  If the file does not exist, returns a non-OK
-  // status.  Implementations should return a NotFound status when the file does
-  // not exist.
-  //
-  // The returned file may be concurrently accessed by multiple threads.
-  virtual Status NewRandomAccessFile(const std::string& fname,
-                                     RandomAccessFile** result) = 0;
+  // 创建一个追加写操作的写对象，如果文件(fname)不存在,则创建新对象
+  virtual Status NewAppendableFile(const std::string& fname, WritableFile** result);
 
-  // Create an object that writes to a new file with the specified
-  // name.  Deletes any existing file with the same name and creates a
-  // new file.  On success, stores a pointer to the new file in
-  // *result and returns OK.  On failure stores nullptr in *result and
-  // returns non-OK.
-  //
-  // The returned file will only be accessed by one thread at a time.
-  virtual Status NewWritableFile(const std::string& fname,
-                                 WritableFile** result) = 0;
-
-  // Create an object that either appends to an existing file, or
-  // writes to a new file (if the file does not exist to begin with).
-  // On success, stores a pointer to the new file in *result and
-  // returns OK.  On failure stores nullptr in *result and returns
-  // non-OK.
-  //
-  // The returned file will only be accessed by one thread at a time.
-  //
-  // May return an IsNotSupportedError error if this Env does
-  // not allow appending to an existing file.  Users of Env (including
-  // the leveldb implementation) must be prepared to deal with
-  // an Env that does not support appending.
-  virtual Status NewAppendableFile(const std::string& fname,
-                                   WritableFile** result);
-
-  // Returns true iff the named file exists.
+  // 判断文件是否存在
   virtual bool FileExists(const std::string& fname) = 0;
 
-  // Store in *result the names of the children of the specified directory.
-  // The names are relative to "dir".
-  // Original contents of *results are dropped.
-  virtual Status GetChildren(const std::string& dir,
-                             std::vector<std::string>* result) = 0;
-  // Delete the named file.
-  //
-  // The default implementation calls DeleteFile, to support legacy Env
-  // implementations. Updated Env implementations must override RemoveFile and
-  // ignore the existence of DeleteFile. Updated code calling into the Env API
-  // must call RemoveFile instead of DeleteFile.
-  //
-  // A future release will remove DeleteDir and the default implementation of
-  // RemoveDir.
+  // 获取目录下面对象的文件并返回
+  virtual Status GetChildren(const std::string& dir, std::vector<std::string>* result) = 0;
+
+  // 删除文件
   virtual Status RemoveFile(const std::string& fname);
 
-  // DEPRECATED: Modern Env implementations should override RemoveFile instead.
-  //
-  // The default implementation calls RemoveFile, to support legacy Env user
-  // code that calls this method on modern Env implementations. Modern Env user
-  // code should call RemoveFile.
-  //
-  // A future release will remove this method.
+  // 删除文件操作
+  // 默认调用 RemoveFile
   virtual Status DeleteFile(const std::string& fname);
 
-  // Create the specified directory.
+  // 创建一个目录
   virtual Status CreateDir(const std::string& dirname) = 0;
 
-  // Delete the specified directory.
-  //
-  // The default implementation calls DeleteDir, to support legacy Env
-  // implementations. Updated Env implementations must override RemoveDir and
-  // ignore the existence of DeleteDir. Modern code calling into the Env API
-  // must call RemoveDir instead of DeleteDir.
-  //
-  // A future release will remove DeleteDir and the default implementation of
-  // RemoveDir.
+  // 删除目录
   virtual Status RemoveDir(const std::string& dirname);
 
-  // DEPRECATED: Modern Env implementations should override RemoveDir instead.
-  //
-  // The default implementation calls RemoveDir, to support legacy Env user
-  // code that calls this method on modern Env implementations. Modern Env user
-  // code should call RemoveDir.
-  //
-  // A future release will remove this method.
+  // 删除目录
+  // 默认调用 RemoveDir
   virtual Status DeleteDir(const std::string& dirname);
 
-  // Store the size of fname in *file_size.
+  // 获取文件的大小
   virtual Status GetFileSize(const std::string& fname, uint64_t* file_size) = 0;
 
-  // Rename file src to target.
-  virtual Status RenameFile(const std::string& src,
-                            const std::string& target) = 0;
+  // 文件重命名
+  virtual Status RenameFile(const std::string& src, const std::string& target) = 0;
 
-  // Lock the specified file.  Used to prevent concurrent access to
-  // the same db by multiple processes.  On failure, stores nullptr in
-  // *lock and returns non-OK.
-  //
-  // On success, stores a pointer to the object that represents the
-  // acquired lock in *lock and returns OK.  The caller should call
-  // UnlockFile(*lock) to release the lock.  If the process exits,
-  // the lock will be automatically released.
-  //
-  // If somebody else already holds the lock, finishes immediately
-  // with a failure.  I.e., this call does not wait for existing locks
-  // to go away.
-  //
-  // May create the named file if it does not already exist.
+  // 执行文件锁操作
   virtual Status LockFile(const std::string& fname, FileLock** lock) = 0;
 
-  // Release the lock acquired by a previous successful call to LockFile.
-  // REQUIRES: lock was returned by a successful LockFile() call
-  // REQUIRES: lock has not already been unlocked.
+  // 文件锁解锁操作
   virtual Status UnlockFile(FileLock* lock) = 0;
 
-  // Arrange to run "(*function)(arg)" once in a background thread.
-  //
-  // "function" may run in an unspecified thread.  Multiple functions
-  // added to the same Env may run concurrently in different threads.
-  // I.e., the caller may not assume that background work items are
-  // serialized.
+  // 调教一个任务到后台线程去执行
   virtual void Schedule(void (*function)(void* arg), void* arg) = 0;
 
-  // Start a new thread, invoking "function(arg)" within the new thread.
-  // When "function(arg)" returns, the thread will be destroyed.
+  // 启动一个线程去异步执行 (*function)(args) 操作
   virtual void StartThread(void (*function)(void* arg), void* arg) = 0;
 
-  // *path is set to a temporary directory that can be used for testing. It may
-  // or may not have just been created. The directory may or may not differ
-  // between runs of the same process, but subsequent calls will return the
-  // same directory.
+  // *path设置为可用于测试的临时目录。
+  // 它可能是也可能不是刚刚创建的。同一进程的不同运行的目录可能不同，也可能不同，但后续调用将返回相同的目录。
   virtual Status GetTestDirectory(std::string* path) = 0;
 
-  // Create and return a log file for storing informational messages.
+  // 创建一个日志文件，用于记录操作日志
   virtual Status NewLogger(const std::string& fname, Logger** result) = 0;
 
-  // Returns the number of micro-seconds since some fixed point in time. Only
-  // useful for computing deltas of time.
+  // 返回当前时刻的微妙数
   virtual uint64_t NowMicros() = 0;
 
-  // Sleep/delay the thread for the prescribed number of micro-seconds.
+  // 休眠一个微妙数时间
   virtual void SleepForMicroseconds(int micros) = 0;
 };
 
-// A file abstraction for reading sequentially through a file
+
+/***
+ * 顺序型文件操作对象
+ */
 class LEVELDB_EXPORT SequentialFile {
  public:
   SequentialFile() = default;
 
+  // 不能赋值与拷贝
   SequentialFile(const SequentialFile&) = delete;
   SequentialFile& operator=(const SequentialFile&) = delete;
 
   virtual ~SequentialFile();
 
-  // Read up to "n" bytes from the file.  "scratch[0..n-1]" may be
-  // written by this routine.  Sets "*result" to the data that was
-  // read (including if fewer than "n" bytes were successfully read).
-  // May set "*result" to point at data in "scratch[0..n-1]", so
-  // "scratch[0..n-1]" must be live when "*result" is used.
-  // If an error was encountered, returns a non-OK status.
-  //
-  // REQUIRES: External synchronization
+  // 从文件中最多读取“n”个字节。
+  // “scratch[0..n-1]”可以由该例程编写。
+  // 将“*result”设置为已读取的数据（包括成功读取的字节数是否少于“n”）。
+  // 可以将“*result”设置为指向“scratch[0..n-1]”中的数据，因此使用“*result”时，“scratch[0..n-1]”必须处于活动状态。
+  // 如果遇到错误，则返回非OK状态。
+  // 非线程安全
   virtual Status Read(size_t n, Slice* result, char* scratch) = 0;
 
-  // Skip "n" bytes from the file. This is guaranteed to be no
-  // slower that reading the same data, but may be faster.
-  //
-  // If end of file is reached, skipping will stop at the end of the
-  // file, and Skip will return OK.
-  //
-  // REQUIRES: External synchronization
+  // 跳过文件中的“n”字节。这保证不会比读取相同数据慢，但可能会更快。
+  //如果到达文件末尾，skip 将在文件末尾停止，并返回OK。
   virtual Status Skip(uint64_t n) = 0;
 };
 
-// A file abstraction for randomly reading the contents of a file.
+
+/***
+ * 随机访问文件操作对象
+ */
 class LEVELDB_EXPORT RandomAccessFile {
  public:
   RandomAccessFile() = default;
@@ -258,22 +174,13 @@ class LEVELDB_EXPORT RandomAccessFile {
 
   virtual ~RandomAccessFile();
 
-  // Read up to "n" bytes from the file starting at "offset".
-  // "scratch[0..n-1]" may be written by this routine.  Sets "*result"
-  // to the data that was read (including if fewer than "n" bytes were
-  // successfully read).  May set "*result" to point at data in
-  // "scratch[0..n-1]", so "scratch[0..n-1]" must be live when
-  // "*result" is used.  If an error was encountered, returns a non-OK
-  // status.
-  //
-  // Safe for concurrent use by multiple threads.
-  virtual Status Read(uint64_t offset, size_t n, Slice* result,
-                      char* scratch) const = 0;
+  // 从 offset 处最多读取 n 个字节， 并返回给 result., result 指向 scratch
+  virtual Status Read(uint64_t offset, size_t n, Slice* result, char* scratch) const = 0;
 };
 
-// A file abstraction for sequential writing.  The implementation
-// must provide buffering since callers may append small fragments
-// at a time to the file.
+/***
+ * 对文件进行写操作的对象
+ */
 class LEVELDB_EXPORT WritableFile {
  public:
   WritableFile() = default;
@@ -283,13 +190,20 @@ class LEVELDB_EXPORT WritableFile {
 
   virtual ~WritableFile();
 
+  // 追加写操作
   virtual Status Append(const Slice& data) = 0;
+
+  // 关闭文件操作
   virtual Status Close() = 0;
+  // 数据刷盘
   virtual Status Flush() = 0;
+
   virtual Status Sync() = 0;
 };
 
-// An interface for writing log messages.
+/***
+ * 日志接口
+ */
 class LEVELDB_EXPORT Logger {
  public:
   Logger() = default;
@@ -299,11 +213,11 @@ class LEVELDB_EXPORT Logger {
 
   virtual ~Logger();
 
-  // Write an entry to the log file with the specified format.
+  //以指定的格式将条目写入日志文件。
   virtual void Logv(const char* format, std::va_list ap) = 0;
 };
 
-// Identifies a locked file.
+// 文件锁接口.
 class LEVELDB_EXPORT FileLock {
  public:
   FileLock() = default;
@@ -321,17 +235,16 @@ void Log(Logger* info_log, const char* format, ...)
 #endif
     ;
 
-// A utility routine: write "data" to the named file.
-LEVELDB_EXPORT Status WriteStringToFile(Env* env, const Slice& data,
-                                        const std::string& fname);
+// 将数据写入到文件
+LEVELDB_EXPORT Status WriteStringToFile(Env* env, const Slice& data, const std::string& fname);
 
-// A utility routine: read contents of named file into *data
-LEVELDB_EXPORT Status ReadFileToString(Env* env, const std::string& fname,
-                                       std::string* data);
+// 从文件中读取数据
+LEVELDB_EXPORT Status ReadFileToString(Env* env, const std::string& fname, std::string* data);
 
-// An implementation of Env that forwards all calls to another Env.
-// May be useful to clients who wish to override just part of the
-// functionality of another Env.
+
+/***
+ * Env 的代理类
+ */
 class LEVELDB_EXPORT EnvWrapper : public Env {
  public:
   // Initialize an EnvWrapper that delegates all calls to *t.
@@ -404,8 +317,6 @@ class LEVELDB_EXPORT EnvWrapper : public Env {
 
 }  // namespace leveldb
 
-// This workaround can be removed when leveldb::Env::DeleteFile is removed.
-// Redefine DeleteFile if it was undefined earlier.
 #if defined(_WIN32) && defined(LEVELDB_DELETEFILE_UNDEFINED)
 #if defined(UNICODE)
 #define DeleteFile DeleteFileW

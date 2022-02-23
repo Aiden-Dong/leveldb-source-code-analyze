@@ -24,6 +24,10 @@ namespace leveldb {
 
 class Slice;
 
+/***
+ * 过滤器， 用于判断对应key是否存在
+ * - 重要实现 BloomFilterPolicy
+ */
 class LEVELDB_EXPORT FilterPolicy {
  public:
   virtual ~FilterPolicy();

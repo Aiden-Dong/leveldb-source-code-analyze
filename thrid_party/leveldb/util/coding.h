@@ -118,15 +118,23 @@ inline uint64_t DecodeFixed64(const char* ptr) {
 // Internal routine for use by fallback path of GetVarint32Ptr
 const char* GetVarint32PtrFallback(const char* p, const char* limit,
                                    uint32_t* value);
-inline const char* GetVarint32Ptr(const char* p, const char* limit,
-                                  uint32_t* value) {
+/***
+ * 将 变长 32 位的数据字符串转为 uint32
+ */
+inline const char* GetVarint32Ptr(const char* p, const char* limit, uint32_t* value) {
+
   if (p < limit) {
     uint32_t result = *(reinterpret_cast<const uint8_t*>(p));
+    // 逻辑重复，是为了提高运算速度?
+    // 标识有效只有一个字节， 直接返回
+
     if ((result & 128) == 0) {
       *value = result;
       return p + 1;
     }
   }
+
+  // 标识数据占用多个字节
   return GetVarint32PtrFallback(p, limit, value);
 }
 

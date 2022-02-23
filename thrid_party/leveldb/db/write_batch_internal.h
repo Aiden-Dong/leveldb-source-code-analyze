@@ -17,26 +17,34 @@ class MemTable;
 class WriteBatchInternal {
  public:
   // Return the number of entries in the batch.
+  // 返回 writebatch 中有多少条数据
   static int Count(const WriteBatch* batch);
 
-  // Set the count for the number of entries in the batch.
+  // 设置这个writebatch 中的数据数量
+  // 对应设置 writebatch 的第二个部分
   static void SetCount(WriteBatch* batch, int n);
 
-  // Return the sequence number for the start of this batch.
+  // 获取这个writebatch的 SeqNum
+  // 对应 writebatch 的第一部分
   static SequenceNumber Sequence(const WriteBatch* batch);
 
-  // Store the specified number as the sequence number for the start of
-  // this batch.
+  // 设置 writebatch 的 SeqNum
+  // 对应设置 writebatch 的第一部分
   static void SetSequence(WriteBatch* batch, SequenceNumber seq);
 
+  // 获取 writebatch 中的内容
   static Slice Contents(const WriteBatch* batch) { return Slice(batch->rep_); }
 
+  // 获取 writebatch 的长度
   static size_t ByteSize(const WriteBatch* batch) { return batch->rep_.size(); }
 
+  // 重新设置 writebatch 里面的内容
   static void SetContents(WriteBatch* batch, const Slice& contents);
 
+  // 遍历 WriteBatch 的内容，将数据落地到 memtable
   static Status InsertInto(const WriteBatch* batch, MemTable* memtable);
 
+  // 将 src 与 dst 中的内容合并到 dst
   static void Append(WriteBatch* dst, const WriteBatch* src);
 };
 

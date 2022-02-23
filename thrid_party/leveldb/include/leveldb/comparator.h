@@ -14,9 +14,8 @@ namespace leveldb {
 class Slice;
 
 /***
- * 
  * key 比较器接口
- * 
+ *  重要实现 : BytewiseComparatorImpl
  **/
 class LEVELDB_EXPORT  Comparator {
  public:

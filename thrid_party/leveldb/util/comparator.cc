@@ -40,7 +40,6 @@ class BytewiseComparatorImpl : public Comparator {
     }
 
     if (diff_index >= min_length) {
-      // Do not shorten if one string is a prefix of the other
       // 表示 start 与 limit 是包含关系（字符包含）
     } else {
       // 标识 start 与 limit 不是包含关系， 有却别
@@ -55,6 +54,10 @@ class BytewiseComparatorImpl : public Comparator {
     }
   }
 
+  /***
+   * 用于找到比key大的最短字符串
+   * 如传入“helloworld”，返回的key可能是“i”而已。
+   */
   void FindShortSuccessor(std::string* key) const override {
     // Find first character that can be incremented
     size_t n = key->size();
