@@ -39,8 +39,8 @@ class Writer {
  private:
   Status EmitPhysicalRecord(RecordType type, const char* ptr, size_t length);
 
-  WritableFile* dest_;
-  int block_offset_;  // Current offset in block
+  WritableFile* dest_;   // 绑定写文件
+  int block_offset_;     // 当前block便宜
 
   // crc32c values for all supported record types.  These are
   // pre-computed to reduce the overhead of computing the crc of the

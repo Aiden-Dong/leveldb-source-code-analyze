@@ -39,6 +39,7 @@
 #endif  // defined(DeleteFile)
 #endif  // defined(_WIN32)
 
+
 namespace leveldb {
 
 class FileLock;

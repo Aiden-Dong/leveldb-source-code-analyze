@@ -41,8 +41,10 @@ class PosixLogger final : public Logger {
     // Record the thread ID.
     constexpr const int kMaxThreadIdSize = 32;
     std::ostringstream thread_stream;
+
+    // 获取线程id
     thread_stream << std::this_thread::get_id();
-    std::string thread_id = thread_stream.str();
+    std::string thread_id = thread_stream.str();   //
     if (thread_id.size() > kMaxThreadIdSize) {
       thread_id.resize(kMaxThreadIdSize);
     }
@@ -51,17 +53,16 @@ class PosixLogger final : public Logger {
     // fails, we make a second attempt with a dynamically allocated buffer.
     constexpr const int kStackBufferSize = 512;
     char stack_buffer[kStackBufferSize];
-    static_assert(sizeof(stack_buffer) == static_cast<size_t>(kStackBufferSize),
-                  "sizeof(char) is expected to be 1 in C++");
+    static_assert(sizeof(stack_buffer) == static_cast<size_t>(kStackBufferSize), "sizeof(char) is expected to be 1 in C++");
 
     int dynamic_buffer_size = 0;  // Computed in the first iteration.
     for (int iteration = 0; iteration < 2; ++iteration) {
-      const int buffer_size =
-          (iteration == 0) ? kStackBufferSize : dynamic_buffer_size;
-      char* const buffer =
-          (iteration == 0) ? stack_buffer : new char[dynamic_buffer_size];
+      // 第一次使用  stack_buffer[kStackBufferSize] 栈对象， 如果数据体太大超过栈空间则第二次重新分配
+      // 第二次将使用 堆对象
+      const int buffer_size =(iteration == 0) ? kStackBufferSize : dynamic_buffer_size;
+      char* const buffer =(iteration == 0) ? stack_buffer : new char[dynamic_buffer_size];
 
-      // Print the header into the buffer.
+      // 写入时间与线程ID
       int buffer_offset = std::snprintf(
           buffer, buffer_size, "%04d/%02d/%02d-%02d:%02d:%02d.%06d %s ",
           now_components.tm_year + 1900, now_components.tm_mon + 1,
@@ -73,33 +74,23 @@ class PosixLogger final : public Logger {
       // 3 delimiters) plus the thread ID, which should fit comfortably into the
       // static buffer.
       assert(buffer_offset <= 28 + kMaxThreadIdSize);
-      static_assert(28 + kMaxThreadIdSize < kStackBufferSize,
-                    "stack-allocated buffer may not fit the message header");
+      static_assert(28 + kMaxThreadIdSize < kStackBufferSize, "stack-allocated buffer may not fit the message header");
       assert(buffer_offset < buffer_size);
 
-      // Print the message into the buffer.
+      // 写入用户自定义消息体
       std::va_list arguments_copy;
       va_copy(arguments_copy, arguments);
-      buffer_offset +=
-          std::vsnprintf(buffer + buffer_offset, buffer_size - buffer_offset,
-                         format, arguments_copy);
+      buffer_offset += std::vsnprintf(buffer + buffer_offset, buffer_size - buffer_offset,format, arguments_copy);
       va_end(arguments_copy);
 
-      // The code below may append a newline at the end of the buffer, which
-      // requires an extra character.
+      // 数据体太大，无法栈上分配
       if (buffer_offset >= buffer_size - 1) {
         // The message did not fit into the buffer.
         if (iteration == 0) {
-          // Re-run the loop and use a dynamically-allocated buffer. The buffer
-          // will be large enough for the log message, an extra newline and a
-          // null terminator.
           dynamic_buffer_size = buffer_offset + 2;
           continue;
         }
 
-        // The dynamically-allocated buffer was incorrectly sized. This should
-        // not happen, assuming a correct implementation of std::(v)snprintf.
-        // Fail in tests, recover by truncating the log message in production.
         assert(false);
         buffer_offset = buffer_size - 1;
       }
@@ -110,6 +101,7 @@ class PosixLogger final : public Logger {
         ++buffer_offset;
       }
 
+      // 数据刷盘
       assert(buffer_offset <= buffer_size);
       std::fwrite(buffer, 1, buffer_offset, fp_);
       std::fflush(fp_);

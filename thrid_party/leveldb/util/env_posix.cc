@@ -457,7 +457,7 @@ class PosixWritableFile final : public WritableFile {
   size_t pos_;  // 当前缓存里的数据量
   int fd_;
 
-  const bool is_manifest_;  // True if the file's name starts with MANIFEST.
+  const bool is_manifest_;  // is_manifest 文件需要实时刷盘，不存缓冲区
   const std::string filename_;
   const std::string dirname_;  // The directory of filename_.
 };
