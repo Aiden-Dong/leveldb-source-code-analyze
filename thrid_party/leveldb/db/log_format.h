@@ -9,7 +9,7 @@
 #define STORAGE_LEVELDB_DB_LOG_FORMAT_H_
 
 /****
- *
+ * WAL 日志 :
  * Record 格式 :
  *    CRC(4个字节)  | length(2个字节) | recordtype(1个字节) | value
  *

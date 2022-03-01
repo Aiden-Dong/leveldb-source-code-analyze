@@ -29,19 +29,14 @@ class Reader {
     virtual void Corruption(size_t bytes, const Status& status) = 0;
   };
 
-  // Create a reader that will return log records from "*file".
-  // "*file" must remain live while this Reader is in use.
-  //
-  // If "reporter" is non-null, it is notified whenever some data is
-  // dropped due to a detected corruption.  "*reporter" must remain
-  // live while this Reader is in use.
-  //
-  // If "checksum" is true, verify checksums if available.
-  //
-  // The Reader will start reading at the first record located at physical
-  // position >= initial_offset within the file.
-  Reader(SequentialFile* file, Reporter* reporter, bool checksum,
-         uint64_t initial_offset);
+
+  /***
+   * 创建一个将从“*file”返回日志记录的 read 工具, 使用read时，“*file”必须保持活动状态。
+   * 如果“reporter”不为空，则每当由于检测到损坏而删除某些数据时，都会通知它。“*reporter”在该read使用期间必须保持活动状态。
+   * 如果“checksum”为真，则验证校验和（如果可用）。
+   * 读取器将从位于文件内 物理位置>=initial_offset 的第一条记录开始读取。
+   */
+  Reader(SequentialFile* file, Reporter* reporter, bool checksum, uint64_t initial_offset);
 
   Reader(const Reader&) = delete;
   Reader& operator=(const Reader&) = delete;
@@ -63,13 +58,8 @@ class Reader {
  private:
   // Extend record types with the following special values
   enum {
-    kEof = kMaxRecordType + 1,
-    // Returned whenever we find an invalid physical record.
-    // Currently there are three situations in which this happens:
-    // * The record has an invalid CRC (ReadPhysicalRecord reports a drop)
-    // * The record is a 0-length record (No drop is reported)
-    // * The record is below constructor's initial_offset (No drop is reported)
-    kBadRecord = kMaxRecordType + 2
+    kEof = kMaxRecordType + 1,         // block 读取到结束的标识
+    kBadRecord = kMaxRecordType + 2    // 错误块标识
   };
 
   // Skips all blocks that are completely before "initial_offset_".
@@ -85,24 +75,23 @@ class Reader {
   void ReportCorruption(uint64_t bytes, const char* reason);
   void ReportDrop(uint64_t bytes, const Status& reason);
 
-  SequentialFile* const file_;
-  Reporter* const reporter_;
-  bool const checksum_;
-  char* const backing_store_;
-  Slice buffer_;
-  bool eof_;  // Last Read() indicated EOF by returning < kBlockSize
+  SequentialFile* const file_;  // block 文件
+  Reporter* const reporter_;    // 数据损坏报告器
+  bool const checksum_;         // 是否启用校验和
+  char* const backing_store_;   // 数据块读取缓冲区
+  Slice buffer_;                // 数据存储缓冲区
+  bool eof_;                    // 文件是否读取到最后的标识
 
-  // Offset of the last record returned by ReadRecord.
+  // ReadRecord 返回的最后一条记录的偏移量.
   uint64_t last_record_offset_;
   // Offset of the first location past the end of buffer_.
-  uint64_t end_of_buffer_offset_;
+  uint64_t end_of_buffer_offset_;  // buffer 的最后偏移点
 
-  // Offset at which to start looking for the first record to return
+  // 开始查找要返回的第一条记录的偏移量
   uint64_t const initial_offset_;
 
-  // True if we are resynchronizing after a seek (initial_offset_ > 0). In
-  // particular, a run of kMiddleType and kLastType records can be silently
-  // skipped in this mode
+  // 如果在寻道后重新同步（初始偏移量>0），则为True。
+  // 特别是，在这种模式下，可以无提示地跳过kMiddleType和kLastType记录的运行
   bool resyncing_;
 };
 
