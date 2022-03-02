@@ -56,11 +56,11 @@ static const int kReadBytesPeriod = 1048576;
  * 数据插入 标志
  *
  * ValueType 与 SequenceNumber 两者的关系 :
- *   在一个 uint64 中，ValueType 占一个字节， SequenceNumber 占7个字节
+ *   在一个 uint64 中，ValueType 占一个字节， SequenceNumber 占7个字节 : (SequenceNumber << 8) | ValueType
  *
  *   static uint64_t PackSequenceAndType(uint64_t seq, ValueType t) {
  *     assert(seq <= kMaxSequenceNumber);
- *    assert(t <= kValueTypeForSeek);
+ *     assert(t <= kValueTypeForSeek);
  *    return (seq << 8) | t;
  *  }
  */
@@ -251,7 +251,12 @@ inline bool ParseInternalKey(const Slice& internal_key, ParsedInternalKey* resul
   return (c <= static_cast<uint8_t>(kTypeValue));
 }
 
-// A helper class useful for DBImpl::Get()
+/***
+ * data :
+ *      - user_data_size + seqNum size
+ *      - user_data
+ *      - seqNum
+ */
 class LookupKey {
  public:
 

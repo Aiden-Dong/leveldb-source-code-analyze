@@ -15,6 +15,7 @@ namespace leveldb {
 
 /***
  * leveldb 内存资源池，用于leveldb 内存资源分配
+ *  : | mem_block1 | mem_block2 | mem_block3 | .....
  */
 class Arena {
  public:

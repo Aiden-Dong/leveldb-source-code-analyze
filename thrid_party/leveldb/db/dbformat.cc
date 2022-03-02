@@ -61,7 +61,6 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
   // 首先比较 user_key 提升速度
   int r = user_comparator_->Compare(ExtractUserKey(akey), ExtractUserKey(bkey));
 
-
   // 如果 user_key 相同， 则比较其版本
   if (r == 0) {
     const uint64_t anum = DecodeFixed64(akey.data() + akey.size() - 8);  // 获取版本号
@@ -139,7 +138,7 @@ bool InternalFilterPolicy::KeyMayMatch(const Slice& key, const Slice& f) const {
 
 LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
   size_t usize = user_key.size();
-  size_t needed = usize + 13;  // A conservative estimate
+  size_t needed = usize + 13;  // +8(seq) +5(usersize)
 
   char* dst;
 
@@ -152,9 +151,8 @@ LookupKey::LookupKey(const Slice& user_key, SequenceNumber s) {
 
   start_ = dst; // 标识内存起始地址
 
-  dst = EncodeVarint32(dst, usize + 8); // 存储总的数据长度 ()
-
-  kstart_ = dst;  // 用户起始地址
+  dst = EncodeVarint32(dst, usize + 8); // 存储总的数据长度 (user_key + seqnum)
+  kstart_ = dst;                              // 用户起始地址
   std::memcpy(dst, user_key.data(), usize);   // 用户名实体
   dst += usize;
   EncodeFixed64(dst, PackSequenceAndType(s, kValueTypeForSeek)); // 序列号

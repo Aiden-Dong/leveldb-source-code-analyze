@@ -91,9 +91,13 @@ void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
   dst->append(value.data(), value.size()); // 填充 value 数据
 }
 
+/**
+ *  计算固定整型V转变为可变整型需要的存储长度
+ */
 int VarintLength(uint64_t v) {
+
   int len = 1;
-  while (v >= 128) {
+  while (v >= 128) {               // 128 == (1<<8)
     v >>= 7;
     len++;
   }
@@ -110,7 +114,7 @@ const char* GetVarint32PtrFallback(const char* p, const char* limit, uint32_t* v
 
     if (byte & 128) {  // 表示中间位
       result |= ((byte & 127) << shift);  // 拼接有效部分
-    } else {  // 标识最后一位
+    } else {                           // 标识最后一位
       result |= (byte << shift);
       *value = result;
       return reinterpret_cast<const char*>(p);

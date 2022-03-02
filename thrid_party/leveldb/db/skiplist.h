@@ -38,68 +38,47 @@
 namespace leveldb {
 
 // leveldb 实现调表结构
-
 template <typename Key, typename Comparator>
 class SkipList {
  private:
   struct Node;
 
  public:
-  // Create a new SkipList object that will use "cmp" for comparing keys,
-  // and will allocate memory using "*arena".  Objects allocated in the arena
-  // must remain allocated for the lifetime of the skiplist object.
   explicit SkipList(Comparator cmp, Arena* arena);
 
   SkipList(const SkipList&) = delete;
   SkipList& operator=(const SkipList&) = delete;
 
-  // Insert key into the list.
-  // REQUIRES: nothing that compares equal to key is currently in the list.
   // 插入一个 key 到列表中
   void Insert(const Key& key);
 
-  // Returns true iff an entry that compares equal to key is in the list.
   // 判断一个 key 是否在列表中
   bool Contains(const Key& key) const;
 
-  // Iteration over the contents of a skip list
   // 内部类
   // 循环遍历 skiplist 结构
   class Iterator {
    public:
-    // Initialize an iterator over the specified list.
-    // The returned iterator is not valid.
     explicit Iterator(const SkipList* list);
 
     // 判断当前是否处于有效节点上
     bool Valid() const;
 
-    // Returns the key at the current position.
-    // REQUIRES: Valid()
     // 返回当前位置对应的key
     const Key& key() const;
 
-    // Advances to the next position.
-    // REQUIRES: Valid()
     // 将当前游标移动到下一个节点上
     void Next();
 
-    // Advances to the previous position.
-    // REQUIRES: Valid()
     // 将当前游标移动到上一个节点上
     void Prev();
 
-    // Advance to the first entry with a key >= target
     // 将游标移动到第一个指定的key上
     void Seek(const Key& target);
 
-    // Position at the first entry in list.
-    // Final state of iterator is Valid() iff list is not empty.
     // 将游标移动到第一个指定的key上
     void SeekToFirst();
 
-    // Position at the last entry in list.
-    // Final state of iterator is Valid() iff list is not empty.
     // 将游标移动到最后一个key上
     void SeekToLast();
 
@@ -127,19 +106,10 @@ class SkipList {
   // Return true if key is greater than the data stored in "n"
   bool KeyIsAfterNode(const Key& key, Node* n) const;
 
-  // Return the earliest node that comes at or after key.
-  // Return nullptr if there is no such node.
-  //
-  // If prev is non-null, fills prev[level] with pointer to previous
-  // node at "level" for every level in [0..max_height_-1].
   Node* FindGreaterOrEqual(const Key& key, Node** prev) const;
 
-  // Return the latest node with a key < key.
-  // Return head_ if there is no such node.
   Node* FindLessThan(const Key& key) const;
 
-  // Return the last node in the list.
-  // Return head_ if list is empty.
   Node* FindLast() const;
 
   // Immutable after construction
@@ -152,16 +122,12 @@ class SkipList {
   // 调表链接节点
   Node* const head_;
 
-  // Modified only by Insert().  Read racily by readers, but stale
-  // values are ok.
   // 当前跳表的最高深度
   std::atomic<int> max_height_;  // Height of the entire list
 
-  // Read/written only by Insert().
   Random rnd_;
 };
 
-// Implementation details follow
 // 调表节点结构
 template <typename Key, class Comparator>
 struct SkipList<Key, Comparator>::Node {
@@ -172,16 +138,12 @@ struct SkipList<Key, Comparator>::Node {
   // 返回第n个指针指向的一下个元素
   Node* Next(int n) {
     assert(n >= 0);
-    // Use an 'acquire load' so that we observe a fully initialized
-    // version of the returned Node.
     return next_[n].load(std::memory_order_acquire);
   }
 
   // 设置第n个指针指向的下一个元素
   void SetNext(int n, Node* x) {
     assert(n >= 0);
-    // Use a 'release store' so that anybody who reads through this
-    // pointer observes a fully initialized version of the inserted node.
     next_[n].store(x, std::memory_order_release);
   }
 
@@ -306,6 +268,8 @@ bool SkipList<Key, Comparator>::KeyIsAfterNode(const Key& key, Node* n) const {
 template <typename Key, class Comparator>
 typename SkipList<Key, Comparator>::Node*
 SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key, Node** prev) const {
+
+  // 从头部开始遍历
   Node* x = head_;
   int level = GetMaxHeight() - 1;
   while (true) {
