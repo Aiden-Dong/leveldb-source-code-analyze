@@ -237,13 +237,16 @@ Status TableBuilder::Finish() {
     WriteBlock(&r->index_block, &index_block_handle);
   }
 
-  // Write footer
+  // 写 Footer 过程
   if (ok()) {
+    // 填充 Footer 数据
     Footer footer;
     footer.set_metaindex_handle(metaindex_block_handle);
     footer.set_index_handle(index_block_handle);
+    // 序列化数据
     std::string footer_encoding;
     footer.EncodeTo(&footer_encoding);
+    // 写入文件
     r->status = r->file->Append(footer_encoding);
     if (r->status.ok()) {
       r->offset += footer_encoding.size();

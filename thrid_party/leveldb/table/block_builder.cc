@@ -39,19 +39,22 @@ namespace leveldb {
 
 BlockBuilder::BlockBuilder(const Options* options)
     : options_(options), restarts_(), counter_(0), finished_(false) {
-  assert(options->block_restart_interval >= 1);
-  restarts_.push_back(0);  // First restart point is at offset 0
+  assert(options->block_restart_interval  >= 1);
+  restarts_.push_back(0);  // 记录第一个重启位置
 }
 
 void BlockBuilder::Reset() {
-  buffer_.clear();
-  restarts_.clear();
-  restarts_.push_back(0);  // First restart point is at offset 0
-  counter_ = 0;
+  buffer_.clear();          // 清空缓存
+  restarts_.clear();        // 清空所有的重启点
+  restarts_.push_back(0);   // 记录第一个重启点
+  counter_ = 0;             // 数据计数重置
   finished_ = false;
   last_key_.clear();
 }
 
+/***
+ * 返回整个 buffer 的大小
+ */
 size_t BlockBuilder::CurrentSizeEstimate() const {
   return (buffer_.size() +                       // Raw data buffer
           restarts_.size() * sizeof(uint32_t) +  // Restart array
@@ -61,47 +64,62 @@ size_t BlockBuilder::CurrentSizeEstimate() const {
 Slice BlockBuilder::Finish() {
   // Append restart array
   for (size_t i = 0; i < restarts_.size(); i++) {
-    PutFixed32(&buffer_, restarts_[i]);
+    PutFixed32(&buffer_, restarts_[i]);       // 填充所有的重启点到 buffer
   }
-  PutFixed32(&buffer_, restarts_.size());
+  PutFixed32(&buffer_, restarts_.size());     // 填充重启点的数量到 buffer
   finished_ = true;
-  return Slice(buffer_);
+  return Slice(buffer_);                            // 返回整个 buffer
 }
 
+/***
+ * 添加 KeyValue， 如果添加次数超过 options_->block_restart_interval, 则记录一下偏移点
+ *
+ * 添加位置 :  buffer_
+ * 添加格式 :  | shared_length | unshared_length | value_length | delta_key | value |
+ *
+ * last_key_ : 指向上次写入的数据
+ *
+ */
 void BlockBuilder::Add(const Slice& key, const Slice& value) {
-  Slice last_key_piece(last_key_);
+  Slice last_key_piece(last_key_);     // 得到上次的key
+
   assert(!finished_);
   assert(counter_ <= options_->block_restart_interval);
   assert(buffer_.empty()  // No values yet?
          || options_->comparator->Compare(key, last_key_piece) > 0);
+
   size_t shared = 0;
+
+  // block_restart_interval 控制着重启点之间的距离
   if (counter_ < options_->block_restart_interval) {
-    // See how much sharing to do with previous string
+    // 记录相同key的位置
     const size_t min_length = std::min(last_key_piece.size(), key.size());
     while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
       shared++;
     }
   } else {
     // Restart compression
-    restarts_.push_back(buffer_.size());
+    // 重启过程中 key 相当于置空 -> share=0
+    restarts_.push_back(buffer_.size());  // 记录重启点的 buffer 偏移
     counter_ = 0;
   }
-  const size_t non_shared = key.size() - shared;
+  const size_t non_shared = key.size() - shared;  // 非共享 key 的长度
 
-  // Add "<shared><non_shared><value_size>" to buffer_
-  PutVarint32(&buffer_, shared);
-  PutVarint32(&buffer_, non_shared);
-  PutVarint32(&buffer_, value.size());
+  // 存储数据长度
+  PutVarint32(&buffer_, shared);       // 写入共享 key 长度   -- 变长 32 位
+  PutVarint32(&buffer_, non_shared);   // 写入非共享 key 长度 -- 变长 32 位
+  PutVarint32(&buffer_, value.size()); // 写入 value 长度    -- 变长 32 位
 
-  // Add string delta to buffer_ followed by value
-  buffer_.append(key.data() + shared, non_shared);
-  buffer_.append(value.data(), value.size());
+  // 存储真实数据
+  buffer_.append(key.data() + shared, non_shared);   // 非共享 key 部分的存储
+  buffer_.append(value.data(), value.size());           // 数据存储
 
-  // Update state
+  // 更新 last_key 表示为  上次插入的key
   last_key_.resize(shared);
   last_key_.append(key.data() + shared, non_shared);
+
   assert(Slice(last_key_) == key);
-  counter_++;
+  counter_++;  // 计数加一
 }
 
 }  // namespace leveldb

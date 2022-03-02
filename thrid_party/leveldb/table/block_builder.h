@@ -14,39 +14,55 @@ namespace leveldb {
 
 struct Options;
 
+/****
+ *  block
+ *  数据格式 :
+ *      | shared_length | unshared_length | value_length | delta_key | value |
+ *      | shared_length | unshared_length | value_length | delta_key | value |
+ *      。。。。
+ *      。。。
+ *      | shared_length | unshared_length | value_length | delta_key | value |
+ *      | restarts_[0] | restarts_[1] | restarts_[2] | ... | restarts_[k] |
+ *      | restarts_size |
+ *
+ *  注意 :
+ *      第一个数据 shared_length := 0, delta_key 表示一个完整的key
+ *      调用 reset() 以后， 同样 shared_length := 0, delta_key 表示一个完整的key
+ */
 class BlockBuilder {
  public:
+  /***
+   * 构造函数
+   */
   explicit BlockBuilder(const Options* options);
 
   BlockBuilder(const BlockBuilder&) = delete;
   BlockBuilder& operator=(const BlockBuilder&) = delete;
 
-  // Reset the contents as if the BlockBuilder was just constructed.
+  /***
+   * 本次block 结束， 清空状态
+   */
   void Reset();
 
-  // REQUIRES: Finish() has not been called since the last call to Reset().
-  // REQUIRES: key is larger than any previously added key
   void Add(const Slice& key, const Slice& value);
 
-  // Finish building the block and return a slice that refers to the
-  // block contents.  The returned slice will remain valid for the
-  // lifetime of this builder or until Reset() is called.
   Slice Finish();
 
-  // Returns an estimate of the current (uncompressed) size of the block
-  // we are building.
+  /***
+ * 返回整个 buffer 的大小
+ */
   size_t CurrentSizeEstimate() const;
 
   // Return true iff no entries have been added since the last Reset()
   bool empty() const { return buffer_.empty(); }
 
  private:
-  const Options* options_;
-  std::string buffer_;              // Destination buffer
-  std::vector<uint32_t> restarts_;  // Restart points
-  int counter_;                     // Number of entries emitted since restart
-  bool finished_;                   // Has Finish() been called?
-  std::string last_key_;
+  const Options* options_;          // 配置选项
+  std::string buffer_;              // 序列化之后的数据
+  std::vector<uint32_t> restarts_;  // 重启点
+  int counter_;                     // 重启点计数器
+  bool finished_;                   // 是否结束
+  std::string last_key_;            // 记录上一次 key
 };
 
 }  // namespace leveldb
