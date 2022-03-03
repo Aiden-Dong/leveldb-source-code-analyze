@@ -12,8 +12,8 @@ namespace leveldb {
 // See doc/table_format.md for an explanation of the filter block format.
 
 // Generate new filter every 2KB of data
-static const size_t kFilterBaseLg = 11;
-static const size_t kFilterBase = 1 << kFilterBaseLg;
+static const size_t kFilterBaseLg = 11;                       //
+static const size_t kFilterBase = 1 << kFilterBaseLg;       /// 2KB 数据构建一个 BloomFilter
 
 FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
     : policy_(policy) {}
@@ -28,11 +28,13 @@ void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
 
 void FilterBlockBuilder::AddKey(const Slice& key) {
   Slice k = key;
-  start_.push_back(keys_.size());
-  keys_.append(k.data(), k.size());
+  start_.push_back(keys_.size());   // 记录上次 key 长度
+  keys_.append(k.data(), k.size()); // 填充 key 数据
 }
 
 Slice FilterBlockBuilder::Finish() {
+
+  // 如果有 key 没有还没有计算完bloomFilter 则触发计算
   if (!start_.empty()) {
     GenerateFilter();
   }
@@ -40,24 +42,33 @@ Slice FilterBlockBuilder::Finish() {
   // Append array of per-filter offsets
   const uint32_t array_offset = result_.size();
   for (size_t i = 0; i < filter_offsets_.size(); i++) {
+    // 填充每个bloom过滤器的偏移
     PutFixed32(&result_, filter_offsets_[i]);
   }
 
+  // 填充总的Bloom过滤器的长度
   PutFixed32(&result_, array_offset);
+  // 填充 11
   result_.push_back(kFilterBaseLg);  // Save encoding parameter in result
   return Slice(result_);
 }
 
+/***
+ * Bloom 过滤器构建过程
+ */
 void FilterBlockBuilder::GenerateFilter() {
-  const size_t num_keys = start_.size();
+
+  const size_t num_keys = start_.size(); // 获取 key 的数量
+
   if (num_keys == 0) {
-    // Fast path if there are no keys for this filter
     filter_offsets_.push_back(result_.size());
     return;
   }
 
   // Make list of keys from flattened key structure
-  start_.push_back(keys_.size());  // Simplify length computation
+  start_.push_back(keys_.size());  // 因为每次都是填充上一次的key, 所以这次记录总得key的长度
+
+  // 提取出所有的 key 使用  vector 存储
   tmp_keys_.resize(num_keys);
   for (size_t i = 0; i < num_keys; i++) {
     const char* base = keys_.data() + start_[i];
@@ -65,10 +76,13 @@ void FilterBlockBuilder::GenerateFilter() {
     tmp_keys_[i] = Slice(base, length);
   }
 
-  // Generate filter for current set of keys and append to result_.
+  // 存储上次 Bloom 过滤器写入后的数据大小
   filter_offsets_.push_back(result_.size());
+
+  // 计算 Bloom 过滤器的值， 并追加到 result 中
   policy_->CreateFilter(&tmp_keys_[0], static_cast<int>(num_keys), &result_);
 
+  // 清空 key
   tmp_keys_.clear();
   keys_.clear();
   start_.clear();
