@@ -19,6 +19,22 @@
 #include "leveldb/options.h"
 #include "leveldb/status.h"
 
+
+/***
+ * SST table 数据构建 :
+ *              <beginning_of_file>
+ *              [data block 1]
+ *              [data block 2]
+ *              ...
+ *              [data block N]
+ *              [meta block 1]
+ *              ...
+ *              [meta block K]
+ *              [metaindex block]
+ *              [index block]
+ *              [Footer]        (fixed size; starts at file_size - sizeof(Footer))
+ *              <end_of_file>
+ */
 namespace leveldb {
 
 class BlockBuilder;
@@ -27,9 +43,15 @@ class WritableFile;
 
 class LEVELDB_EXPORT TableBuilder {
  public:
-  // Create a builder that will store the contents of the table it is
-  // building in *file.  Does not close the file.  It is up to the
-  // caller to close the file after calling Finish().
+
+  /**
+   * 初始化函数
+   * 填充 Rep 元信息
+   * 初始化 FilterBlock : Filter_block->StartBlock(0);
+   *
+   * @param options 配置选项
+   * @param file    写出文件
+   */
   TableBuilder(const Options& options, WritableFile* file);
 
   TableBuilder(const TableBuilder&) = delete;
@@ -44,11 +66,14 @@ class LEVELDB_EXPORT TableBuilder {
   // passed to the constructor is different from its value in the
   // structure passed to this method, this method will return an error
   // without changing any fields.
+  // 覆盖 Options 选项
   Status ChangeOptions(const Options& options);
 
-  // Add key,value to the table being constructed.
-  // REQUIRES: key is after any previously added key according to comparator.
-  // REQUIRES: Finish(), Abandon() have not been called
+  /***
+   * 添加 Key, Value 当前SSTable中
+   * @param key
+   * @param value
+   */
   void Add(const Slice& key, const Slice& value);
 
   // Advanced operation: flush any buffered key/value pairs to file.

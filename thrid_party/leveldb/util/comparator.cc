@@ -28,6 +28,12 @@ class BytewiseComparatorImpl : public Comparator {
     return a.compare(b);
   }
 
+  /**
+   * 在 start 小于 limit 的前提下，截断 start 生成 new_start
+   * 使得  start <= new_start <= limit
+   * @param start
+   * @param limit
+   */
   void FindShortestSeparator(std::string* start, const Slice& limit) const override {
     // Find length of common prefix
     size_t min_length = std::min(start->size(), limit.size());

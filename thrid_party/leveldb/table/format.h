@@ -25,21 +25,21 @@ struct ReadOptions;
  *              [data block 1]
  *              [data block 2]
  *              ...
- *              [data block N]
- *              [meta block 1]
- *              ...
- *              [meta block K]
+ *              [data block n]
+ *              [filter block]
+ *              [meta block]
  *              [metaindex block]
  *              [index block]
  *              [Footer]        (fixed size; starts at file_size - sizeof(Footer))
  *              <end_of_file>
- *
- *
  */
 
 
 /***
- * BlockHandle 是指向 datablock 或 metablock 的文件范围的指针。
+ * BlockHandle 主要用来记录其他block的索引信息。
+ * 格式 :
+ *      - offset_ :  Varint64
+ *      - size_   :  Varint64
  */
 class BlockHandle {
  public:
@@ -77,8 +77,10 @@ class BlockHandle {
 // end of every table file.
 
 /***
- * Footer 封装了存储在每个表文件末尾的固定信息。
- * 固定 48 个字节
+ * Footer 部分数据落地 :
+ *      metaindex_handle_    :  BlockHandle
+ *      index_handle_        :  BlockHandle
+ *      kTableMagicNumber    :  64 bytes
  */
 class Footer {
  public:

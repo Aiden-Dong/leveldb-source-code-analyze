@@ -21,23 +21,23 @@ namespace leveldb {
 
 class FilterPolicy;
 
-// A FilterBlockBuilder is used to construct all of the filters for a
-// particular Table.  It generates a single string which is stored as
-// a special block in the Table.
-//
-// The sequence of calls to FilterBlockBuilder must match the regexp:
-//      (StartBlock AddKey*)* Finish
-
 /***
  * FilterBlock 也受到 datablock 更新而更新， 当 datablock 开启新的 block 时候，
  * filter block 也会开启新的block(startblock), 当然内部会遵循2kb 一个 filter 来进行构建
  *
  * 数据结构 :
- *     | BloomFilter-1 | BloomFilter-2 | .... | BloomFilter-n |
- *     ...
- *     ...
- *     | BloomFilter-offset-0 | BloomFilter-offset-1 | ... | BloomFilter-offset-n |
- *     | BloomFilter-size | kFilterBaseLg |
+ *      [filter 0]                     : string
+ *      [filter 1]                     : string
+ *      [filter 2]                     : string
+ *      ...
+ *      [filter n-1]                   : string
+ *
+ *      [offset of filter 0]           : 4 bytes
+ *      [offset of filter 1]           : 4 bytes
+ *      .....
+ *      [offset of filter n-1]         : 4 bytes
+ *      [offset of filter all result]  : 4 bytes
+ *      lg(base)                       : 1 bytes
  */
 class FilterBlockBuilder {
  public:
@@ -58,9 +58,9 @@ class FilterBlockBuilder {
 
   /***
    * 内部数据 :
-   *   - 每个 filter 的偏移量
-   *   - filter 总的字节大小
-   *   - kFilterBaseLg 数据保存
+   *    - 每个 filter 的偏移量
+   *    - filter 总的字节大小
+   *    - kFilterBaseLg 数据保存
    * @return 构造的 FilterBlock 块
    */
   Slice Finish();

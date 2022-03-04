@@ -76,6 +76,12 @@ int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
 }
 
 
+  /**
+   * 在 start 小于 limit 的前提下，截断 start 生成 new_start
+   * 使得  start <= new_start <= limit
+   * @param start
+   * @param limit
+   */
 void InternalKeyComparator::FindShortestSeparator(std::string* start, const Slice& limit) const {
   // Attempt to shorten the user portion of the key
   Slice user_start = ExtractUserKey(*start);     // 从 start 中获取 user_key
@@ -83,6 +89,8 @@ void InternalKeyComparator::FindShortestSeparator(std::string* start, const Slic
 
   std::string tmp(user_start.data(), user_start.size()); // 复制 start
 
+  // 寻找 start_user_key <= tmp <= user_limit 的最短字节
+  // 传递给  tmp
   user_comparator_->FindShortestSeparator(&tmp, user_limit);
 
   if (tmp.size() < user_start.size() &&
@@ -90,6 +98,7 @@ void InternalKeyComparator::FindShortestSeparator(std::string* start, const Slic
     // user_start > tmp
     // User key has become shorter physically, but larger logically.
     // Tack on the earliest possible number to the shortened user key.
+    // 把 tmp 替换为 user_key 封装为 internalkey 取出
     PutFixed64(&tmp,PackSequenceAndType(kMaxSequenceNumber, kValueTypeForSeek));
     assert(this->Compare(*start, tmp) < 0);
     assert(this->Compare(tmp, limit) < 0);

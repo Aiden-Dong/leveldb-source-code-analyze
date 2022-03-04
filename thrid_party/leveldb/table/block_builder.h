@@ -15,15 +15,14 @@ namespace leveldb {
 struct Options;
 
 /****
- *  block
+ *  BlockBuild 用来构建 datablock 与 indexblock
  *  数据格式 :
- *      | shared_length | unshared_length | value_length | delta_key | value |
- *      | shared_length | unshared_length | value_length | delta_key | value |
+ *      | shared_length(Varint32) | unshared_length(Varint32) | value_length(Varint32) | delta_key(string) | value(string) |
+ *      | shared_length(Varint32) | unshared_length(Varint32) | value_length(Varint32) | delta_key(string) | value(string) |
  *      。。。。
- *      。。。
- *      | shared_length | unshared_length | value_length | delta_key | value |
- *      | restarts_[0] | restarts_[1] | restarts_[2] | ... | restarts_[k] |
- *      | restarts_size |
+ *      | shared_length(Varint32) | unshared_length(Varint32) | value_length(Varint32) | delta_key(string) | value(string) |
+ *      | restarts_[0](Fixed32) | restarts_[1](Fixed32) | restarts_[2](Fixed32) | ... | restarts_[k](Fixed32) |
+ *      | restarts_size(Fixed32) |
  *
  *  注意 :
  *      第一个数据 shared_length := 0, delta_key 表示一个完整的key

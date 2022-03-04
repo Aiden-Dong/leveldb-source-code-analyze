@@ -43,6 +43,9 @@ BlockBuilder::BlockBuilder(const Options* options)
   restarts_.push_back(0);  // 记录第一个重启位置
 }
 
+/***
+ * Block 写入完成后， 清空所有的状态，重新写入一个block
+ */
 void BlockBuilder::Reset() {
   buffer_.clear();          // 清空缓存
   restarts_.clear();        // 清空所有的重启点
