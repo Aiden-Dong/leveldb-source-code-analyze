@@ -21,6 +21,9 @@ FilterBlockBuilder::FilterBlockBuilder(const FilterPolicy* policy)
 void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
   uint64_t filter_index = (block_offset / kFilterBase);  // 现在需要的 filter_offset 数量
   assert(filter_index >= filter_offsets_.size());
+
+  // 存在的意义是为了多写几个无效的偏移
+  // 然后用于快速基于 block_offset 快速定位 filter_offsets
   while (filter_index > filter_offsets_.size()) {
     GenerateFilter();
   }
@@ -88,25 +91,39 @@ void FilterBlockBuilder::GenerateFilter() {
   start_.clear();
 }
 
+
 FilterBlockReader::FilterBlockReader(const FilterPolicy* policy, const Slice& contents)
     : policy_(policy), data_(nullptr), offset_(nullptr), num_(0), base_lg_(0) {
+
   size_t n = contents.size();
   if (n < 5) return;  // 1 byte for base_lg_ and 4 for start of offset array
-  base_lg_ = contents[n - 1];
+  base_lg_ = contents[n - 1]; // 获取最后的 base_lg
+
+  // 定位 BloomFilter 过滤体最后一个字符的偏移位置
   uint32_t last_word = DecodeFixed32(contents.data() + n - 5);
   if (last_word > n - 5) return;
+
   data_ = contents.data();
+
+  // 找到第一个偏移点位置
   offset_ = data_ + last_word;
+  // 找到
   num_ = (n - 5 - last_word) / 4;
 }
 
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
+
+  // 基于 block_offset 定位到 offset_[index]
   uint64_t index = block_offset >> base_lg_;
+
   if (index < num_) {
+    // 截取 Bloom 过滤器
     uint32_t start = DecodeFixed32(offset_ + index * 4);
     uint32_t limit = DecodeFixed32(offset_ + index * 4 + 4);
+
     if (start <= limit && limit <= static_cast<size_t>(offset_ - data_)) {
       Slice filter = Slice(data_ + start, limit - start);
+      // 匹配查找
       return policy_->KeyMayMatch(key, filter);
     } else if (start == limit) {
       // Empty filters do not match any keys

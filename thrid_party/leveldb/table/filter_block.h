@@ -79,18 +79,26 @@ class FilterBlockBuilder {
   std::vector<uint32_t> filter_offsets_;    // 每个过滤器的偏移量
 };
 
+/***
+ * Bloom过滤器读取器
+ */
 class FilterBlockReader {
  public:
-  // REQUIRES: "contents" and *policy must stay live while *this is live.
+  /***
+   * 过滤器读取器构造
+   * @param policy 策略， Bloom过滤器
+   * @param contents  filterblock 消息体
+   */
   FilterBlockReader(const FilterPolicy* policy, const Slice& contents);
+
   bool KeyMayMatch(uint64_t block_offset, const Slice& key);
 
  private:
   const FilterPolicy* policy_;
-  const char* data_;    // Pointer to filter data (at block-start)
-  const char* offset_;  // Pointer to beginning of offset array (at block-end)
-  size_t num_;          // Number of entries in offset array
-  size_t base_lg_;      // Encoding parameter (see kFilterBaseLg in .cc file)
+  const char* data_;    // 数据体指针
+  const char* offset_;  // Bloom 过滤器定位点 初始位置指针
+  size_t num_;          // Bloom 过滤器数量
+  size_t base_lg_;      // kFilterBase
 };
 
 }  // namespace leveldb

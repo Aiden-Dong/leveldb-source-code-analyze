@@ -31,15 +31,13 @@ struct TableBuilder::Rep {
         index_block(&index_block_options),
         num_entries(0),
         closed(false),
-        filter_block(opt.filter_policy == nullptr
-                         ? nullptr
-                         : new FilterBlockBuilder(opt.filter_policy)),
+        filter_block(opt.filter_policy == nullptr ? nullptr : new FilterBlockBuilder(opt.filter_policy)),
         pending_index_entry(false) {
     index_block_options.block_restart_interval = 1;
   }
 
   Options options;                  // 选项
-  Options index_block_options;      //
+  Options index_block_options;      // 传递给 block 的配置选项
   WritableFile* file;               // 写文件指针
   uint64_t offset;                  // 记录写入的文件偏移位置
   Status status;                     // 记录写入状态
@@ -189,6 +187,7 @@ void TableBuilder::Flush() {
 /***
  * 数据刷盘操作 :
  *   写入类型 :
+ *
  *        | datablock       uint8[n]
  *        | compress_type   uint8
  *        | crc32           uint32
@@ -199,6 +198,7 @@ void TableBuilder::Flush() {
  *   3. 统计 BlockHandle
  *   4. 将 block, 压缩类型， crc32 写盘
  *   5. 清空 block
+ *
  * @param block
  * @param handle
  */
@@ -288,11 +288,15 @@ void TableBuilder::WriteRawBlock(const Slice& block_contents, CompressionType ty
 Status TableBuilder::status() const { return rep_->status; }
 
 /***
- * 数据写入完成， 进行归档操作
+ * 数据写入完成， 进行归档操作 ：
+ *    | data_block_1 | data_block_2 | ... | data_block_n |
+ *    | filter_block |
+ *    | meta_index_block |
+ *    | index_block |
+ *    | footer |
  * @return
  */
 Status TableBuilder::Finish() {
-
   Rep* r = rep_;
 
   // Data Block 剩余数据落盘
@@ -304,7 +308,7 @@ Status TableBuilder::Finish() {
 
   // Filter Block 数据落盘
   if (ok() && r->filter_block != nullptr) {
-    WriteRawBlock(r->filter_block->Finish(), kNoCompression,&filter_block_handle);
+    WriteRawBlock(r->filter_block->Finish(), kNoCompression, &filter_block_handle);
   }
 
   // Meta index block 数据落盘

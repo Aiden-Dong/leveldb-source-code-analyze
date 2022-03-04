@@ -43,6 +43,11 @@ class BlockBuilder {
    */
   void Reset();
 
+  /***
+   * 数据 key valiue 写入 block_builder
+   * @param key
+   * @param value
+   */
   void Add(const Slice& key, const Slice& value);
 
   Slice Finish();

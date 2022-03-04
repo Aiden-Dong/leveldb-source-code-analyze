@@ -27,7 +27,6 @@ struct ReadOptions;
  *              ...
  *              [data block n]
  *              [filter block]
- *              [meta block]
  *              [metaindex block]
  *              [index block]
  *              [Footer]        (fixed size; starts at file_size - sizeof(Footer))
