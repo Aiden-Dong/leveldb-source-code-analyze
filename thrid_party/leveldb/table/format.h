@@ -20,7 +20,6 @@ struct ReadOptions;
 
 /*****
  * table_format :
- *
  *              <beginning_of_file>
  *              [data block 1]
  *              [data block 2]

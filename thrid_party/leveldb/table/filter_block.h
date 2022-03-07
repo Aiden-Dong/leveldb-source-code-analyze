@@ -50,11 +50,11 @@ class FilterBlockBuilder {
    * 根据 datablock 偏移量构建新的 filter block
    */
   void StartBlock(uint64_t block_offset);
-  /**
+
+  /***
    * 在 key 添加到 datablock 后，也会添加到 filter block 中
    */
   void AddKey(const Slice& key);
-
 
   /***
    * 内部数据 :

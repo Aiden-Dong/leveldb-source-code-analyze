@@ -91,7 +91,11 @@ void FilterBlockBuilder::GenerateFilter() {
   start_.clear();
 }
 
-
+/***
+ * 构造器
+ * @param policy  过滤器策略
+ * @param contents Filter Block
+ */
 FilterBlockReader::FilterBlockReader(const FilterPolicy* policy, const Slice& contents)
     : policy_(policy), data_(nullptr), offset_(nullptr), num_(0), base_lg_(0) {
 
@@ -99,15 +103,15 @@ FilterBlockReader::FilterBlockReader(const FilterPolicy* policy, const Slice& co
   if (n < 5) return;  // 1 byte for base_lg_ and 4 for start of offset array
   base_lg_ = contents[n - 1]; // 获取最后的 base_lg
 
-  // 定位 BloomFilter 过滤体最后一个字符的偏移位置
+  // last_word 为 FilterBlock 中，最后一个filter数据的结束偏移量
   uint32_t last_word = DecodeFixed32(contents.data() + n - 5);
   if (last_word > n - 5) return;
 
   data_ = contents.data();
 
-  // 找到第一个偏移点位置
+  // 定位到filter索引起始位置
   offset_ = data_ + last_word;
-  // 找到
+  // 计算有多少个  filter 索引
   num_ = (n - 5 - last_word) / 4;
 }
 
