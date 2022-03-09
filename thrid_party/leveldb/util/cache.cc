@@ -23,6 +23,7 @@ namespace {
 // LRU 策略 : 淘汰最近最久未使用的缓存
 
 /****
+ * LRU 缓存节点
  * 即用于 hashtable , 又用于lru缓存节点
  */
 struct LRUHandle {
@@ -47,7 +48,7 @@ struct LRUHandle {
 };
 
 /***
- * HashTable : 数组加单链表结构
+ * HandleTable(HashTable) : 数组加单链表结构
  *      1. hash table 的容量大小默认为0，
  *      2. 而且如果元素少于4时，hash table 按照元素的个数来分配
  *      3. 如果元素大于4时， 则按照2的倍数对齐
@@ -286,11 +287,11 @@ void LRUCache::Release(Cache::Handle* handle) {
   Unref(reinterpret_cast<LRUHandle*>(handle));
 }
 
-Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
-                                size_t charge,
+Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
                                 void (*deleter)(const Slice& key, void* value)) {
   MutexLock l(&mutex_);
 
+  // 构造缓存节点
   LRUHandle* e = reinterpret_cast<LRUHandle*>(malloc(sizeof(LRUHandle) - 1 + key.size())); // 创建一个 handler 节点
 
   e->value = value;
@@ -306,14 +307,15 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value,
   if (capacity_ > 0) {
     e->refs++;  // for the cache's reference.
     e->in_cache = true;
-    LRU_Append(&in_use_, e);
+    LRU_Append(&in_use_, e); // 在 in_use_ LRU双向链表尾部插入一个新的节点
     usage_ += charge;
     FinishErase(table_.Insert(e));  // 如果存在旧节点，则需要释放掉旧节点
   } else {  // don't cache. (capacity_==0 is supported and turns off caching.)
     // next is read by key() in an assert, so it must be initialized
     e->next = nullptr;
   }
-  // 如果容量不够， 需要
+
+  // 如果容量不够， 需要进行删除策略, 从 lru 首部移出节点
   while (usage_ > capacity_ && lru_.next != &lru_) {
     LRUHandle* old = lru_.next;
     assert(old->refs == 1);
@@ -395,6 +397,7 @@ class ShardedLRUCache : public Cache {
   ~ShardedLRUCache() override {}
   Handle* Insert(const Slice& key, void* value, size_t charge,
                  void (*deleter)(const Slice& key, void* value)) override {
+    // 计算 key 的 hash 点， 用于落地在指定的share 点位
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);
   }

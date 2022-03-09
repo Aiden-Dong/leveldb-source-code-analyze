@@ -21,6 +21,12 @@ class Env;
 
 class TableCache {
  public:
+  /**
+   * Table Cache 构造器
+   * @param dbname 数据表名字
+   * @param options cache 配置选项
+   * @param entries cache 容量
+   */
   TableCache(const std::string& dbname, const Options& options, int entries);
 
   TableCache(const TableCache&) = delete;
@@ -35,25 +41,29 @@ class TableCache {
   // underlies the returned iterator.  The returned "*tableptr" object is owned
   // by the cache and should not be deleted, and is valid for as long as the
   // returned iterator is live.
+  // 因为 sst 本身是可遍历的， 所以他会对外一个 iter 接口
   Iterator* NewIterator(const ReadOptions& options, uint64_t file_number,
                         uint64_t file_size, Table** tableptr = nullptr);
 
   // If a seek to internal key "k" in specified file finds an entry,
   // call (*handle_result)(arg, found_key, found_value).
+  // 查询指定的 key
   Status Get(const ReadOptions& options, uint64_t file_number,
              uint64_t file_size, const Slice& k, void* arg,
              void (*handle_result)(void*, const Slice&, const Slice&));
 
-  // Evict any entry for the specified file number
+  // 淘汰指定的SST句柄
   void Evict(uint64_t file_number);
 
  private:
+
+  // 查找指定的SSTable, 优先去缓存找， 找不到则去磁盘读取， 读取后插入到缓存中
   Status FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle**);
 
-  Env* const env_;
-  const std::string dbname_;
-  const Options& options_;
-  Cache* cache_;
+  Env* const env_;                      // 读取 SST 文件
+  const std::string dbname_;            // sst 名字
+  const Options& options_;              // Cache 参数配置
+  Cache* cache_;                        // ShardedLRUCache
 };
 
 }  // namespace leveldb

@@ -88,14 +88,14 @@ void BlockBuilder::Add(const Slice& key, const Slice& value) {
 
   assert(!finished_);
   assert(counter_ <= options_->block_restart_interval);
-  assert(buffer_.empty()  // No values yet?
-         || options_->comparator->Compare(key, last_key_piece) > 0);
+  assert(buffer_.empty()  // No value
+   || options_->comparator->Compare(key, last_key_piece) > 0);
 
   size_t shared = 0;
 
   // block_restart_interval 控制着重启点之间的距离
   if (counter_ < options_->block_restart_interval) {
-    // 记录相同key的位置
+    // 记录相同 key 的位置
     const size_t min_length = std::min(last_key_piece.size(), key.size());
     while ((shared < min_length) && (last_key_piece[shared] == key[shared])) {
       shared++;

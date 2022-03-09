@@ -25,29 +25,29 @@ class TableCache;
 // multiple threads without external synchronization.
 class LEVELDB_EXPORT Table {
  public:
-  // Attempt to open the table that is stored in bytes [0..file_size)
-  // of "file", and read the metadata entries necessary to allow
-  // retrieving data from the table.
-  //
-  // If successful, returns ok and sets "*table" to the newly opened
-  // table.  The client should delete "*table" when no longer needed.
-  // If there was an error while initializing the table, sets "*table"
-  // to nullptr and returns a non-ok status.  Does not take ownership of
-  // "*source", but the client must ensure that "source" remains live
-  // for the duration of the returned table's lifetime.
-  //
-  // *file must remain live while this Table is in use.
-  static Status Open(const Options& options, RandomAccessFile* file,
-                     uint64_t file_size, Table** table);
+
+  /***
+   * 静态函数， 而且唯一是共有的接口， 构造 Table 对象
+   * 主要负责解析出基本数据，如 Footer, 然后解析出 metaindex_block, index_block, filter_block, data_block
+   * BlockContexts 对象到Block的转换， 其中主要是计算出 restart_offset_ 而且 Block 是可以被遍历的
+   *
+   * @param options
+   * @param file
+   * @param file_size
+   * @param table
+   * @return
+   */
+  static Status Open(const Options& options, RandomAccessFile* file, uint64_t file_size, Table** table);
 
   Table(const Table&) = delete;
   Table& operator=(const Table&) = delete;
 
   ~Table();
 
-  // Returns a new iterator over the table contents.
-  // The result of NewIterator() is initially invalid (caller must
-  // call one of the Seek methods on the iterator before using it).
+  /***
+   * 返回 index block 的迭代器
+   * 目的是为了确定 key 位于那个 datablock中
+   */
   Iterator* NewIterator(const ReadOptions&) const;
 
   // Given a key, return an approximate byte offset in the file where
@@ -60,22 +60,42 @@ class LEVELDB_EXPORT Table {
 
  private:
   friend class TableCache;
+
   struct Rep;
 
   static Iterator* BlockReader(void*, const ReadOptions&, const Slice&);
 
   explicit Table(Rep* rep) : rep_(rep) {}
 
-  // Calls (*handle_result)(arg, ...) with the entry found after a call
-  // to Seek(key).  May not make such a call if filter policy says
-  // that key is not present.
+  // 查找指定的 key, 内部先 bf 判断， 然后缓存获取，最后在读取文件
   Status InternalGet(const ReadOptions&, const Slice& key, void* arg,
                      void (*handle_result)(void* arg, const Slice& k,
                                            const Slice& v));
 
+  /**
+   * 读取元数据， 主要是 Footer, 然后是 metaindex_handler, fil
+   * @param footer
+   */
   void ReadMeta(const Footer& footer);
+
+  /***
+   * 根据 Filter handler 还原 filter block 数据
+   * @param filter_handle_value
+   */
   void ReadFilter(const Slice& filter_handle_value);
 
+  /***
+ * struct Table::Rep {
+ *   Options options;                // Table 相关参数信息
+ *   Status status;                  // Table 相关状态信息
+ *   RandomAccessFile* file;         // Table 所持有的文件
+ *   uint64_t cache_id;              // Table 本身的缓存 id
+ *   FilterBlockReader* filter;      // filter block 块的读取
+ *   const char* filter_data;        // 保存对应的filter 数据
+ *   BlockHandle metaindex_handle;   // 解析保存 metaindex_handler
+ *   Block* index_block;             // index block 数据
+ * };
+ */
   Rep* const rep_;
 };
 

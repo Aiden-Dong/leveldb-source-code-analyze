@@ -17,6 +17,10 @@
 
 namespace leveldb {
 
+/***
+ * 计算 Block 中有多少个重启点
+ * @return
+ */
 inline uint32_t Block::NumRestarts() const {
   assert(size_ >= sizeof(uint32_t));
   return DecodeFixed32(data_ + size_ - sizeof(uint32_t));
@@ -26,10 +30,13 @@ Block::Block(const BlockContents& contents)
     : data_(contents.data.data()),
       size_(contents.data.size()),
       owned_(contents.heap_allocated) {
+
   if (size_ < sizeof(uint32_t)) {
     size_ = 0;  // Error marker
   } else {
+    // 模糊计算最多有多少个重启点
     size_t max_restarts_allowed = (size_ - sizeof(uint32_t)) / sizeof(uint32_t);
+
     if (NumRestarts() > max_restarts_allowed) {
       // The size is too small for NumRestarts()
       size_ = 0;
@@ -45,49 +52,65 @@ Block::~Block() {
   }
 }
 
-// Helper routine: decode the next block entry starting at "p",
-// storing the number of shared key bytes, non_shared key bytes,
-// and the length of the value in "*shared", "*non_shared", and
-// "*value_length", respectively.  Will not dereference past "limit".
-//
-// If any errors are detected, returns nullptr.  Otherwise, returns a
-// pointer to the key delta (just past the three decoded values).
+/****
+ *
+ * 解码从 p 开始的下一个 entry，获取 shared_length, non_shared_length, value_length
+ *
+ * @param p             计算初始点
+ * @param limit         限制位
+ * @param shared        存储 share_key_length
+ * @param non_shared    存储 non_share_key_length
+ * @param value_length  存储 value_length
+ *
+ * @return  指向 delay_key 的指针
+ */
 static inline const char* DecodeEntry(const char* p, const char* limit,
-                                      uint32_t* shared, uint32_t* non_shared,
-                                      uint32_t* value_length) {
+                                      uint32_t* shared, uint32_t* non_shared, uint32_t* value_length) {
   if (limit - p < 3) return nullptr;
+
   *shared = reinterpret_cast<const uint8_t*>(p)[0];
   *non_shared = reinterpret_cast<const uint8_t*>(p)[1];
   *value_length = reinterpret_cast<const uint8_t*>(p)[2];
-  if ((*shared | *non_shared | *value_length) < 128) {
+
+  if ((*shared | *non_shared | *value_length) < 128) {  // 表示如果只占一个字节
     // Fast path: all three values are encoded in one byte each
     p += 3;
   } else {
+    // 填充计算
     if ((p = GetVarint32Ptr(p, limit, shared)) == nullptr) return nullptr;
     if ((p = GetVarint32Ptr(p, limit, non_shared)) == nullptr) return nullptr;
     if ((p = GetVarint32Ptr(p, limit, value_length)) == nullptr) return nullptr;
   }
 
+  // 校验数据格式
   if (static_cast<uint32_t>(limit - p) < (*non_shared + *value_length)) {
     return nullptr;
   }
+
+  // p 指向
   return p;
 }
 
+/***
+ * Block 遍历器
+ */
 class Block::Iter : public Iterator {
  private:
-  const Comparator* const comparator_;
-  const char* const data_;       // underlying block contents
-  uint32_t const restarts_;      // Offset of restart array (list of fixed32)
-  uint32_t const num_restarts_;  // Number of uint32_t entries in restart array
+  const Comparator* const comparator_;     // 比较器
+  const char* const data_;                 // 数据体
+  uint32_t const restarts_;                // 重启点距离数据的偏移量
+  uint32_t const num_restarts_;            // 重启点的数量
 
   // current_ is offset in data_ of current entry.  >= restarts_ if !Valid
-  uint32_t current_;
+  uint32_t current_;        // 当前索引点
   uint32_t restart_index_;  // Index of restart block in which current_ falls
   std::string key_;
   Slice value_;
   Status status_;
 
+  /***
+   * key 比较器
+   */
   inline int Compare(const Slice& a, const Slice& b) const {
     return comparator_->Compare(a, b);
   }
@@ -97,14 +120,22 @@ class Block::Iter : public Iterator {
     return (value_.data() + value_.size()) - data_;
   }
 
+  /***
+   * 基于 index 找到计算对应的偏移区指针
+   * @return restarts_[index]
+   */
   uint32_t GetRestartPoint(uint32_t index) {
     assert(index < num_restarts_);
     return DecodeFixed32(data_ + restarts_ + index * sizeof(uint32_t));
   }
 
+  /***
+   * 获取 index 指向的偏移点，
+   * @param index
+   */
   void SeekToRestartPoint(uint32_t index) {
     key_.clear();
-    restart_index_ = index;
+    restart_index_ = index;  // 将 restart_index 定位到 left
     // current_ will be fixed by ParseNextKey();
 
     // ParseNextKey() starts at the end of value_, so set value_ accordingly
@@ -113,8 +144,7 @@ class Block::Iter : public Iterator {
   }
 
  public:
-  Iter(const Comparator* comparator, const char* data, uint32_t restarts,
-       uint32_t num_restarts)
+  Iter(const Comparator* comparator, const char* data, uint32_t restarts, uint32_t num_restarts)
       : comparator_(comparator),
         data_(data),
         restarts_(restarts),
@@ -161,11 +191,16 @@ class Block::Iter : public Iterator {
     } while (ParseNextKey() && NextEntryOffset() < original);
   }
 
+  /***
+   * 找到目标 key
+   * @param target
+   */
   void Seek(const Slice& target) override {
     // Binary search in restart array to find the last restart point
     // with a key < target
-    uint32_t left = 0;
-    uint32_t right = num_restarts_ - 1;
+    uint32_t left = 0;                      // 偏移点下限
+    uint32_t right = num_restarts_ - 1;     // 偏移点上限
+
     int current_key_compare = 0;
 
     if (Valid()) {
@@ -184,34 +219,44 @@ class Block::Iter : public Iterator {
       }
     }
 
+     // 使用二分查找
+     //
+     // 每次只跟每个重启块的第一个Key进行比较
+     // 因为第一个key是完整的， 所以比较速度快
     while (left < right) {
       uint32_t mid = (left + right + 1) / 2;
+
       uint32_t region_offset = GetRestartPoint(mid);
       uint32_t shared, non_shared, value_length;
-      const char* key_ptr =
-          DecodeEntry(data_ + region_offset, data_ + restarts_, &shared,
-                      &non_shared, &value_length);
+
+      // 获取
+      const char* key_ptr = DecodeEntry(data_ + region_offset, data_ + restarts_, &shared, &non_shared, &value_length);
+
       if (key_ptr == nullptr || (shared != 0)) {
         CorruptionError();
         return;
       }
+
+      // 取出一个 key
       Slice mid_key(key_ptr, non_shared);
+
       if (Compare(mid_key, target) < 0) {
-        // Key at "mid" is smaller than "target".  Therefore all
-        // blocks before "mid" are uninteresting.
+        // 数据在右边
         left = mid;
       } else {
-        // Key at "mid" is >= "target".  Therefore all blocks at or
-        // after "mid" are uninteresting.
+        // 数据在左边
         right = mid - 1;
       }
     }
 
+    // left == right == mid || Compare(mid_key) == 0
+
+
     // We might be able to use our current position within the restart block.
-    // This is true if we determined the key we desire is in the current block
-    // and is after than the current key.
+    // This is true if we determined the key we desire is in the current block and is after than the current key.
     assert(current_key_compare == 0 || Valid());
     bool skip_seek = left == restart_index_ && current_key_compare < 0;
+
     if (!skip_seek) {
       SeekToRestartPoint(left);
     }
@@ -282,6 +327,7 @@ Iterator* Block::NewIterator(const Comparator* comparator) {
     return NewErrorIterator(Status::Corruption("bad block contents"));
   }
   const uint32_t num_restarts = NumRestarts();
+
   if (num_restarts == 0) {
     return NewEmptyIterator();
   } else {

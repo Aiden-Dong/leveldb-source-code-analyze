@@ -121,10 +121,14 @@ static const uint64_t kTableMagicNumber = 0xdb4775248b80fb57ull;
 // 1-byte type + 32-bit crc
 static const size_t kBlockTrailerSize = 5;
 
+/***
+ * BlockContents 类主要用在 ReadBlock 函数中
+ * 保存 block 解析出来的临时数据
+ */
 struct BlockContents {
-  Slice data;           // Actual contents of data
-  bool cachable;        // True iff data can be cached
-  bool heap_allocated;  // True iff caller should delete[] data.data()
+  Slice data;           // 数据体
+  bool cachable;        // 如果数据完整，表示可以进行缓存
+  bool heap_allocated;  // 表示该对象是否可以分配到堆上
 };
 
 // Read the block identified by "handle" from "file".  On failure

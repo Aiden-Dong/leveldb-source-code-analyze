@@ -24,19 +24,18 @@ struct Table::Rep {
     delete index_block;
   }
 
-  Options options;
-  Status status;
-  RandomAccessFile* file;
-  uint64_t cache_id;
-  FilterBlockReader* filter;
-  const char* filter_data;
+  Options options;               // Table 相关的参数信息
+  Status status;                 // Table 相关的状态信息
+  RandomAccessFile* file;        // Table 所持有的文件
+  uint64_t cache_id;             // cache 本身所对应的缓存id
+  FilterBlockReader* filter;     // filter block 块的读取
+  const char* filter_data;       // 保存对应的 filter 数据
 
-  BlockHandle metaindex_handle;  // Handle to metaindex_block: saved from footer
-  Block* index_block;
+  BlockHandle metaindex_handle;  // 解析保存 metaindex_handler
+  Block* index_block;            // index block 数据
 };
 
-Status Table::Open(const Options& options, RandomAccessFile* file,
-                   uint64_t size, Table** table) {
+Status Table::Open(const Options& options, RandomAccessFile* file, uint64_t size, Table** table) {
   *table = nullptr;
   if (size < Footer::kEncodedLength) {
     return Status::Corruption("file is too short to be an sstable");
