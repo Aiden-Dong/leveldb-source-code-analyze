@@ -103,9 +103,9 @@ class Block::Iter : public Iterator {
 
   // current_ is offset in data_ of current entry.  >= restarts_ if !Valid
   uint32_t current_;        // 当前索引点
-  uint32_t restart_index_;  // Index of restart block in which current_ falls
-  std::string key_;
-  Slice value_;
+  uint32_t restart_index_;  // 初始点在最右边
+  std::string key_;         // block_build 的有效 key 数据
+  Slice value_;             // block_build 的有效 value 数据
   Status status_;
 
   /***
@@ -121,7 +121,7 @@ class Block::Iter : public Iterator {
   }
 
   /***
-   * 基于 index 找到计算对应的偏移区指针
+   * 基于 index 获取对应的
    * @return restarts_[index]
    */
   uint32_t GetRestartPoint(uint32_t index) {
@@ -130,12 +130,14 @@ class Block::Iter : public Iterator {
   }
 
   /***
-   * 获取 index 指向的偏移点，
+   * 截断数据包
+   *    value 指向新的有效的数据体
+   *    restart_index 指向新的有效 偏移位
    * @param index
    */
   void SeekToRestartPoint(uint32_t index) {
     key_.clear();
-    restart_index_ = index;  // 将 restart_index 定位到 left
+    restart_index_ = index;       // 将 restart_index 定位到 index
     // current_ will be fixed by ParseNextKey();
 
     // ParseNextKey() starts at the end of value_, so set value_ accordingly
@@ -221,7 +223,7 @@ class Block::Iter : public Iterator {
 
      // 使用二分查找
      //
-     // 每次只跟每个重启块的第一个Key进行比较
+     // 每次只跟每个重启块 的 第一个Key进行比较
      // 因为第一个key是完整的， 所以比较速度快
     while (left < right) {
       uint32_t mid = (left + right + 1) / 2;
@@ -229,7 +231,7 @@ class Block::Iter : public Iterator {
       uint32_t region_offset = GetRestartPoint(mid);
       uint32_t shared, non_shared, value_length;
 
-      // 获取
+      // 获取 data[mid] 的 block 的首 key
       const char* key_ptr = DecodeEntry(data_ + region_offset, data_ + restarts_, &shared, &non_shared, &value_length);
 
       if (key_ptr == nullptr || (shared != 0)) {
@@ -237,7 +239,6 @@ class Block::Iter : public Iterator {
         return;
       }
 
-      // 取出一个 key
       Slice mid_key(key_ptr, non_shared);
 
       if (Compare(mid_key, target) < 0) {
@@ -251,11 +252,10 @@ class Block::Iter : public Iterator {
 
     // left == right == mid || Compare(mid_key) == 0
 
-
     // We might be able to use our current position within the restart block.
     // This is true if we determined the key we desire is in the current block and is after than the current key.
     assert(current_key_compare == 0 || Valid());
-    bool skip_seek = left == restart_index_ && current_key_compare < 0;
+    bool skip_seek = left == restart_index_ && current_key_compare < 0;  // false
 
     if (!skip_seek) {
       SeekToRestartPoint(left);
@@ -292,12 +292,20 @@ class Block::Iter : public Iterator {
     value_.clear();
   }
 
+  /***
+   * 从当前 value_ 位置移动到下一个有效的 entry
+   * 并且计算处下一步的 key_vaue
+   * @return
+   */
   bool ParseNextKey() {
+    // 计算 下一步要计算的数据位置距离  data_ 的偏移
     current_ = NextEntryOffset();
+
     const char* p = data_ + current_;
-    const char* limit = data_ + restarts_;  // Restarts come right after data
-    if (p >= limit) {
-      // No more entries to return.  Mark as invalid.
+    const char* limit = data_ + restarts_;  // 有效数据体的上限位置
+
+    if (p >= limit) {  // 没有有效数据
+      // 设置当前状态为无效
       current_ = restarts_;
       restart_index_ = num_restarts_;
       return false;
@@ -305,6 +313,8 @@ class Block::Iter : public Iterator {
 
     // Decode next entry
     uint32_t shared, non_shared, value_length;
+
+
     p = DecodeEntry(p, limit, &shared, &non_shared, &value_length);
     if (p == nullptr || key_.size() < shared) {
       CorruptionError();
@@ -313,8 +323,8 @@ class Block::Iter : public Iterator {
       key_.resize(shared);
       key_.append(p, non_shared);
       value_ = Slice(p + non_shared, value_length);
-      while (restart_index_ + 1 < num_restarts_ &&
-             GetRestartPoint(restart_index_ + 1) < current_) {
+
+      while (restart_index_ + 1 < num_restarts_ && GetRestartPoint(restart_index_ + 1) < current_) {
         ++restart_index_;
       }
       return true;

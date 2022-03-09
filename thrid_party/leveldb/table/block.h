@@ -26,7 +26,7 @@ class Comparator;
  *                          share_key_value_1
  *                          .....
  *                          share_key_value_n
- *     restart_offset_  ->  restart_0
+ *     restarts_        ->  restart_0
  *                          restart_1
  *                          ....
  *                          restart_k
