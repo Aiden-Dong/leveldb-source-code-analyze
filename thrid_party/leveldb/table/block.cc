@@ -101,12 +101,11 @@ class Block::Iter : public Iterator {
   uint32_t const restarts_;                // 重启点距离数据的偏移量
   uint32_t const num_restarts_;            // 重启点的数量
 
-  // current_ is offset in data_ of current entry.  >= restarts_ if !Valid
-  uint32_t current_;        // 当前索引点
-  uint32_t restart_index_;  // 初始点在最右边
-  std::string key_;         // block_build 的有效 key 数据
-  Slice value_;             // block_build 的有效 value 数据
-  Status status_;
+  uint32_t current_;                       // 当前读取 entry 的偏移位置
+  uint32_t restart_index_;                 // 当前 current_ 的左侧最近的重启点， 用来二分查找的缓存加速
+  std::string key_;                        // block_build 的有效 key 数据
+  Slice value_;                            // block_build 的有效 value 数据
+  Status status_;                          // 读取状态
 
   /***
    * key 比较器
@@ -115,7 +114,10 @@ class Block::Iter : public Iterator {
     return comparator_->Compare(a, b);
   }
 
-  // Return the offset in data_ just past the end of the current entry.
+
+  /***
+   * 计算下一个 entry 距离 data_ 的偏移位置
+   */
   inline uint32_t NextEntryOffset() const {
     return (value_.data() + value_.size()) - data_;
   }
@@ -130,10 +132,7 @@ class Block::Iter : public Iterator {
   }
 
   /***
-   * 截断数据包
-   *    value 指向新的有效的数据体
-   *    restart_index 指向新的有效 偏移位
-   * @param index
+   * 设置 restart_index_ 并且为数据读取做准备
    */
   void SeekToRestartPoint(uint32_t index) {
     key_.clear();
@@ -156,36 +155,50 @@ class Block::Iter : public Iterator {
     assert(num_restarts_ > 0);
   }
 
+  /***
+   * 当前数据是否有效
+   */
   bool Valid() const override { return current_ < restarts_; }
+
   Status status() const override { return status_; }
+
   Slice key() const override {
     assert(Valid());
     return key_;
   }
+
   Slice value() const override {
     assert(Valid());
     return value_;
   }
 
+  /***
+   * 从 block 中获取下一个 key_value
+   */
   void Next() override {
     assert(Valid());
     ParseNextKey();
   }
 
+  /***
+   * 从 block 中读取上一个 key_value
+   */
   void Prev() override {
     assert(Valid());
 
     // Scan backwards to a restart point before current_
     const uint32_t original = current_;
+    // 定位到上一个重启点
     while (GetRestartPoint(restart_index_) >= original) {
       if (restart_index_ == 0) {
-        // No more entries
+        // 表示此时 iter 停留在 block 第一个 key_value 中
         current_ = restarts_;
         restart_index_ = num_restarts_;
         return;
       }
       restart_index_--;
     }
+
 
     SeekToRestartPoint(restart_index_);
     do {
@@ -194,8 +207,7 @@ class Block::Iter : public Iterator {
   }
 
   /***
-   * 找到目标 key
-   * @param target
+   * 使用二分查找法， 遍历 block 试图找到对应的 key
    */
   void Seek(const Slice& target) override {
     // Binary search in restart array to find the last restart point
@@ -206,17 +218,13 @@ class Block::Iter : public Iterator {
     int current_key_compare = 0;
 
     if (Valid()) {
-      // If we're already scanning, use the current position as a starting
-      // point. This is beneficial if the key we're seeking to is ahead of the
-      // current position.
+      // 表示存在有效数据， 利用上次查询加速这次数据查询过程
       current_key_compare = Compare(key_, target);
       if (current_key_compare < 0) {
-        // key_ is smaller than target
         left = restart_index_;
       } else if (current_key_compare > 0) {
         right = restart_index_;
       } else {
-        // We're seeking to the key we're already at.
         return;
       }
     }
@@ -265,17 +273,24 @@ class Block::Iter : public Iterator {
       if (!ParseNextKey()) {
         return;
       }
+      // 可以 从小到达排序
       if (Compare(key_, target) >= 0) {
         return;
       }
     }
   }
 
+  /***
+   * 获取 block 第一个 entry 的 key_value
+   */
   void SeekToFirst() override {
     SeekToRestartPoint(0);
     ParseNextKey();
   }
 
+  /***
+   * 获取 block 的最后一个entry的最后一个 key_value
+   */
   void SeekToLast() override {
     SeekToRestartPoint(num_restarts_ - 1);
     while (ParseNextKey() && NextEntryOffset() < restarts_) {
@@ -295,11 +310,10 @@ class Block::Iter : public Iterator {
   /***
    * 从当前 value_ 位置移动到下一个有效的 entry
    * 并且计算处下一步的 key_vaue
-   * @return
    */
   bool ParseNextKey() {
-    // 计算 下一步要计算的数据位置距离  data_ 的偏移
-    current_ = NextEntryOffset();
+
+    current_ = NextEntryOffset();  // 当前要读取数据偏移位置
 
     const char* p = data_ + current_;
     const char* limit = data_ + restarts_;  // 有效数据体的上限位置
@@ -314,7 +328,6 @@ class Block::Iter : public Iterator {
     // Decode next entry
     uint32_t shared, non_shared, value_length;
 
-
     p = DecodeEntry(p, limit, &shared, &non_shared, &value_length);
     if (p == nullptr || key_.size() < shared) {
       CorruptionError();
@@ -324,6 +337,7 @@ class Block::Iter : public Iterator {
       key_.append(p, non_shared);
       value_ = Slice(p + non_shared, value_length);
 
+      // 将 restart_index 设置为 小于 current_ 偏移的最近的重启点
       while (restart_index_ + 1 < num_restarts_ && GetRestartPoint(restart_index_ + 1) < current_) {
         ++restart_index_;
       }

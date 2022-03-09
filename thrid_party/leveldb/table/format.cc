@@ -74,13 +74,20 @@ Status Footer::DecodeFrom(Slice* input) {
   return result;
 }
 
-Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
-                 const BlockHandle& handle, BlockContents* result) {
+/***
+ * 从文件中读取一个 Block 并 填充到 BlockContents 中
+ * @param file    sst 文件
+ * @param options 文件读取选项
+ * @param handle  Block 的偏移元信息
+ * @param result  将Block 转换为一个  BlockContests
+ */
+Status ReadBlock(RandomAccessFile* file, const ReadOptions& options, const BlockHandle& handle, BlockContents* result) {
+
   result->data = Slice();
   result->cachable = false;
   result->heap_allocated = false;
 
-  // Read the block contents as well as the type/crc footer.
+  // contents as well as the type/crc footer.
   // See table_builder.cc for the code that built this structure.
   size_t n = static_cast<size_t>(handle.size());
   char* buf = new char[n + kBlockTrailerSize];
@@ -90,6 +97,7 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
     delete[] buf;
     return s;
   }
+
   if (contents.size() != n + kBlockTrailerSize) {
     delete[] buf;
     return Status::Corruption("truncated block read");
@@ -107,12 +115,10 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
     }
   }
 
+  // 解压缩填充 BlockContexts
   switch (data[n]) {
     case kNoCompression:
       if (data != buf) {
-        // File implementation gave us pointer to some other data.
-        // Use it directly under the assumption that it will be live
-        // while the file is open.
         delete[] buf;
         result->data = Slice(data, n);
         result->heap_allocated = false;
@@ -122,8 +128,6 @@ Status ReadBlock(RandomAccessFile* file, const ReadOptions& options,
         result->heap_allocated = true;
         result->cachable = true;
       }
-
-      // Ok
       break;
     case kSnappyCompression: {
       size_t ulength = 0;

@@ -25,16 +25,20 @@ class Comparator;
  *     data_            ->  share_key_value_0
  *                          share_key_value_1
  *                          .....
+ *     current_         ->  share_key_value_h
+ *                          .....
  *                          share_key_value_n
  *     restarts_        ->  restart_0
  *                          restart_1
  *                          ....
+ *                          restart_m
+ *                          ....
  *                          restart_k
- *                          restart_number
+ *                          num_restarts_
  *
  * 主要作用 :
  *    - 保存 BlockContents 转换后的数据， 存储到 cache 中
- *    - 由于 sst 中存储的 block 都存在多个 item(类似于一个vector), 因此需要一个迭代器来遍历
+ *    - BlockContexts 数据为 BlockBuilder 构造的复杂数据结构，Block 中提供了 Block::Iter 用来检索 BlockBuilder 对应结构的数据
  */
 class Block {
  public:

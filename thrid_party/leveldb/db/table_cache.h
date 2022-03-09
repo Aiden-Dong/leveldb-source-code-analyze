@@ -42,15 +42,12 @@ class TableCache {
   // by the cache and should not be deleted, and is valid for as long as the
   // returned iterator is live.
   // 因为 sst 本身是可遍历的， 所以他会对外一个 iter 接口
-  Iterator* NewIterator(const ReadOptions& options, uint64_t file_number,
-                        uint64_t file_size, Table** tableptr = nullptr);
+  Iterator* NewIterator(const ReadOptions& options, uint64_t file_number, uint64_t file_size, Table** tableptr = nullptr);
 
   // If a seek to internal key "k" in specified file finds an entry,
   // call (*handle_result)(arg, found_key, found_value).
   // 查询指定的 key
-  Status Get(const ReadOptions& options, uint64_t file_number,
-             uint64_t file_size, const Slice& k, void* arg,
-             void (*handle_result)(void*, const Slice&, const Slice&));
+  Status Get(const ReadOptions& options, uint64_t file_number,uint64_t file_size, const Slice& k, void* arg, void (*handle_result)(void*, const Slice&, const Slice&));
 
   // 淘汰指定的SST句柄
   void Evict(uint64_t file_number);
@@ -63,6 +60,20 @@ class TableCache {
   Env* const env_;                      // 读取 SST 文件
   const std::string dbname_;            // sst 名字
   const Options& options_;              // Cache 参数配置
+
+  /**
+   * key   : {sst_file_number}
+   * value : {TableAndFile}
+   *
+   * 说明 :
+   *   table 中使用的是 option 中的全局 blockcache
+   *       格式 : {cache_id, offset} -> datablock
+   *       cacheid 是table中的内部变量
+   *   tablecache 中使用的是 tablecache 内部cache
+   *       格式 : {sst_file_number} -> {file + table}
+   *
+   *   需要注意的是当 tablecache 中的 table 缓存失效是， option 中的全局 blockcache 有部分 block 将无效
+   */
   Cache* cache_;                        // ShardedLRUCache
 };
 

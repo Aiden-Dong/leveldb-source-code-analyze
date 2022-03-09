@@ -75,10 +75,13 @@ class BlockHandle {
 // end of every table file.
 
 /***
+ *
  * Footer 部分数据落地 :
  *      metaindex_handle_    :  BlockHandle
  *      index_handle_        :  BlockHandle
  *      kTableMagicNumber    :  64 bytes
+ *
+ *      Footer 部分数据长度固定为 48 字节: metaindex_handle_, index_handle_, 00..00, kTableMagicNumber
  */
 class Footer {
  public:
@@ -118,7 +121,7 @@ class Footer {
 // and taking the leading 64 bits.
 static const uint64_t kTableMagicNumber = 0xdb4775248b80fb57ull;
 
-// 1-byte type + 32-bit crc
+// block 元信息 1-byte type + 32-bit crc
 static const size_t kBlockTrailerSize = 5;
 
 /***

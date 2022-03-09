@@ -159,6 +159,12 @@ class HandleTable {
  *   4. lru_.next 表示只在缓存中的节点
  *   5. table_是为了记录key和节点的映射关系，通过key可以快速定位到某个节点
  *   6. 调用insert/lookup 之后， 一定要使用 release 来释放句柄
+ *
+ *   lru / in_use 共同实现了 LRU 策略
+ *
+ *   当 entry 被引用时， 数据会插入到 in_use 中
+ *   如果没人引用时，entry 从 in_use 丢到 lru 中， 清理策略要从 lru 中踢出。
+ *   最新无引用的 entry 要塞到尾部， 从首部删除节点
  */
 class LRUCache {
  public:
@@ -287,8 +293,18 @@ void LRUCache::Release(Cache::Handle* handle) {
   Unref(reinterpret_cast<LRUHandle*>(handle));
 }
 
-Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value, size_t charge,
-                                void (*deleter)(const Slice& key, void* value)) {
+/***
+ * 插入一个 新的节点到缓存中
+ *
+ * @param key         cache key
+ * @param hash        用来快速定位数据的hash key
+ * @param value       cache value
+ * @param charge
+ * @param deleter
+ *
+ * @return  insert entry
+ */
+Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value, size_t charge, void (*deleter)(const Slice& key, void* value)) {
   MutexLock l(&mutex_);
 
   // 构造缓存节点
@@ -302,7 +318,6 @@ Cache::Handle* LRUCache::Insert(const Slice& key, uint32_t hash, void* value, si
   e->in_cache = false;
   e->refs = 1;  // for the returned handle.
   std::memcpy(e->key_data, key.data(), key.size());
-
 
   if (capacity_ > 0) {
     e->refs++;  // for the cache's reference.
@@ -395,8 +410,7 @@ class ShardedLRUCache : public Cache {
     }
   }
   ~ShardedLRUCache() override {}
-  Handle* Insert(const Slice& key, void* value, size_t charge,
-                 void (*deleter)(const Slice& key, void* value)) override {
+  Handle* Insert(const Slice& key, void* value, size_t charge,void (*deleter)(const Slice& key, void* value)) override {
     // 计算 key 的 hash 点， 用于落地在指定的share 点位
     const uint32_t hash = HashSlice(key);
     return shard_[Shard(hash)].Insert(key, hash, value, charge, deleter);

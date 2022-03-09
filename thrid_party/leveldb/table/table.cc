@@ -27,7 +27,7 @@ struct Table::Rep {
   Options options;               // Table 相关的参数信息
   Status status;                 // Table 相关的状态信息
   RandomAccessFile* file;        // Table 所持有的文件
-  uint64_t cache_id;             // cache 本身所对应的缓存id
+  uint64_t cache_id;             // cache 本身所对应的缓存id， 自增生成
   FilterBlockReader* filter;     // filter block 块的读取
   const char* filter_data;       // 保存对应的 filter 数据
 
@@ -37,21 +37,26 @@ struct Table::Rep {
 
 Status Table::Open(const Options& options, RandomAccessFile* file, uint64_t size, Table** table) {
   *table = nullptr;
+
+  // 数据大小太小，不足以构建 Footer
   if (size < Footer::kEncodedLength) {
     return Status::Corruption("file is too short to be an sstable");
   }
 
+
+  // Footer 区域解析
+  // 将字节反序列化成 Footer
   char footer_space[Footer::kEncodedLength];
   Slice footer_input;
-  Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength,
-                        &footer_input, footer_space);
+  Status s = file->Read(size - Footer::kEncodedLength, Footer::kEncodedLength, &footer_input, footer_space);
   if (!s.ok()) return s;
 
   Footer footer;
   s = footer.DecodeFrom(&footer_input);
   if (!s.ok()) return s;
 
-  // Read the index block
+  // IndexBlock 区域解析
+  // 并将数据解析成 IndexBlock
   BlockContents index_block_contents;
   ReadOptions opt;
   if (options.paranoid_checks) {
@@ -60,9 +65,7 @@ Status Table::Open(const Options& options, RandomAccessFile* file, uint64_t size
   s = ReadBlock(file, opt, footer.index_handle(), &index_block_contents);
 
   if (s.ok()) {
-    // We've successfully read the footer and the index block: we're
-    // ready to serve requests.
-    Block* index_block = new Block(index_block_contents);
+    Block* index_block = new Block(index_block_contents);  // 构造 index_block
     Rep* rep = new Table::Rep;
     rep->options = options;
     rep->file = file;
@@ -72,28 +75,33 @@ Status Table::Open(const Options& options, RandomAccessFile* file, uint64_t size
     rep->filter_data = nullptr;
     rep->filter = nullptr;
     *table = new Table(rep);
+    // 填充 rep->filter
     (*table)->ReadMeta(footer);
   }
 
   return s;
 }
 
+/***
+ * 读取 Block 的过滤信息
+ * @param footer
+ */
 void Table::ReadMeta(const Footer& footer) {
+
   if (rep_->options.filter_policy == nullptr) {
     return;  // Do not need any metadata
   }
 
-  // TODO(sanjay): Skip this if footer.metaindex_handle() size indicates
-  // it is an empty block.
   ReadOptions opt;
   if (rep_->options.paranoid_checks) {
     opt.verify_checksums = true;
   }
+  // 读取  MetaIndexBlock， 里面是 Filter 信息
   BlockContents contents;
   if (!ReadBlock(rep_->file, opt, footer.metaindex_handle(), &contents).ok()) {
-    // Do not propagate errors since meta info is not needed for operation
     return;
   }
+
   Block* meta = new Block(contents);
 
   Iterator* iter = meta->NewIterator(BytewiseComparator());
@@ -107,6 +115,10 @@ void Table::ReadMeta(const Footer& footer) {
   delete meta;
 }
 
+/***
+ * 基于 filter_hadler 读取 Filter 信息
+ * @param filter_handle_value
+ */
 void Table::ReadFilter(const Slice& filter_handle_value) {
   Slice v = filter_handle_value;
   BlockHandle filter_handle;
@@ -132,53 +144,73 @@ void Table::ReadFilter(const Slice& filter_handle_value) {
 
 Table::~Table() { delete rep_; }
 
+/***
+ * 删除这个 block 的空间
+ */
 static void DeleteBlock(void* arg, void* ignored) {
   delete reinterpret_cast<Block*>(arg);
 }
 
+/***
+ * 删除这个 cache block 的空间， Cache 回调函数
+ */
 static void DeleteCachedBlock(const Slice& key, void* value) {
   Block* block = reinterpret_cast<Block*>(value);
   delete block;
 }
 
+/***
+ * 释放这个 block 的缓存
+ */
 static void ReleaseBlock(void* arg, void* h) {
   Cache* cache = reinterpret_cast<Cache*>(arg);
   Cache::Handle* handle = reinterpret_cast<Cache::Handle*>(h);
   cache->Release(handle);
 }
 
-// Convert an index iterator value (i.e., an encoded BlockHandle)
-// into an iterator over the contents of the corresponding block.
-Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
-                             const Slice& index_value) {
+/***
+ * 读取一个 Block 并返回这个 Block 的 Iterator
+ * 优先从 cache 中加载 : {cache_id | offset << 8} -> datablock
+ * cache 不存在再从文件中加载
+ *
+ * @param arg              table 句柄
+ * @param options          配置选项
+ * @param index_value      对应 block 的 block_handler
+ *
+ * @return datablock->iter
+ */
+Iterator* Table::BlockReader(void* arg, const ReadOptions& options, const Slice& index_value) {
   Table* table = reinterpret_cast<Table*>(arg);
-  Cache* block_cache = table->rep_->options.block_cache;
+  Cache* block_cache = table->rep_->options.block_cache;  // 获取 Block Cache
   Block* block = nullptr;
   Cache::Handle* cache_handle = nullptr;
 
+  // 解析 BlockHandler
   BlockHandle handle;
   Slice input = index_value;
   Status s = handle.DecodeFrom(&input);
-  // We intentionally allow extra stuff in index_value so that we
-  // can add more features in the future.
 
   if (s.ok()) {
     BlockContents contents;
-    if (block_cache != nullptr) {
+
+    if (block_cache != nullptr) {      // 具有缓存系统
       char cache_key_buffer[16];
-      EncodeFixed64(cache_key_buffer, table->rep_->cache_id);
-      EncodeFixed64(cache_key_buffer + 8, handle.offset());
+      EncodeFixed64(cache_key_buffer, table->rep_->cache_id);    // 填充 cache_id
+      EncodeFixed64(cache_key_buffer + 8, handle.offset());  // 填充 offset
+
       Slice key(cache_key_buffer, sizeof(cache_key_buffer));
-      cache_handle = block_cache->Lookup(key);
-      if (cache_handle != nullptr) {
+
+      cache_handle = block_cache->Lookup(key);     // 寻找这个 key 是否存在
+
+      if (cache_handle != nullptr) {        // 存在于缓存中
         block = reinterpret_cast<Block*>(block_cache->Value(cache_handle));
-      } else {
+      } else {                             // 并不存在于缓存中
         s = ReadBlock(table->rep_->file, options, handle, &contents);
         if (s.ok()) {
           block = new Block(contents);
           if (contents.cachable && options.fill_cache) {
-            cache_handle = block_cache->Insert(key, block, block->size(),
-                                               &DeleteCachedBlock);
+            // 填充到缓存中
+            cache_handle = block_cache->Insert(key, block, block->size(), &DeleteCachedBlock);
           }
         }
       }
@@ -190,6 +222,7 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
     }
   }
 
+  // 获取 Block::Iter
   Iterator* iter;
   if (block != nullptr) {
     iter = block->NewIterator(table->rep_->options.comparator);
@@ -204,35 +237,50 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options,
   return iter;
 }
 
+/***
+ * 获得 基于 indexblock 的 datablock 双层遍历器
+ */
 Iterator* Table::NewIterator(const ReadOptions& options) const {
-  return NewTwoLevelIterator(
-      rep_->index_block->NewIterator(rep_->options.comparator),
-      &Table::BlockReader, const_cast<Table*>(this), options);
+  return NewTwoLevelIterator(rep_->index_block->NewIterator(rep_->options.comparator), &Table::BlockReader, const_cast<Table*>(this), options);
 }
 
-Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
-                          void (*handle_result)(void*, const Slice&,
-                                                const Slice&)) {
+/***
+ * 基于回调的方式， 查找某个 key, 如果找到则调用 handle_result(arg, key, value)
+ *
+ * @param options            配置选项
+ * @param k                  key
+ * @param arg                参数
+ * @param handle_result      找到外部数据时候触发的外部调用
+ *
+ */
+Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg, void (*handle_result)(void*, const Slice&,const Slice&)) {
   Status s;
+
+  // IndexBlock 迭代器
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
-  iiter->Seek(k);
-  if (iiter->Valid()) {
-    Slice handle_value = iiter->value();
-    FilterBlockReader* filter = rep_->filter;
+  iiter->Seek(k);   // key_ >= k
+
+  if (iiter->Valid()) {  // 找到这个数据
+    Slice handle_value = iiter->value();         // 定位到 datablock 的位置
+    FilterBlockReader* filter = rep_->filter;    // 获得过滤器
     BlockHandle handle;
-    if (filter != nullptr && handle.DecodeFrom(&handle_value).ok() &&
-        !filter->KeyMayMatch(handle.offset(), k)) {
-      // Not found
+
+    // 使用 Bloom 过滤器判断一下数据是否在这个 block 里面
+    if (filter != nullptr && handle.DecodeFrom(&handle_value).ok() && !filter->KeyMayMatch(handle.offset(), k)) {
+      // Bloom 过滤器没有找到这个数据
     } else {
+      // 加载这个 block
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
       if (block_iter->Valid()) {
+        // 找到这个数据，调用回调函数
         (*handle_result)(arg, block_iter->key(), block_iter->value());
       }
       s = block_iter->status();
       delete block_iter;
     }
   }
+
   if (s.ok()) {
     s = iiter->status();
   }
@@ -241,8 +289,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
 }
 
 uint64_t Table::ApproximateOffsetOf(const Slice& key) const {
-  Iterator* index_iter =
-      rep_->index_block->NewIterator(rep_->options.comparator);
+  Iterator* index_iter = rep_->index_block->NewIterator(rep_->options.comparator);
   index_iter->Seek(key);
   uint64_t result;
   if (index_iter->Valid()) {

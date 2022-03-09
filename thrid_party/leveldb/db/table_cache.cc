@@ -23,12 +23,13 @@ struct TableAndFile {
  */
 static void DeleteEntry(const Slice& key, void* value) {
   TableAndFile* tf = reinterpret_cast<TableAndFile*>(value);
-  delete tf->table;  // 调用 RandomAccessFile 析构函数
-  delete tf->file;   // 调用 Table 析构函数
+  delete tf->table;  // 调用  Table 析构函数
+  delete tf->file;   // 调用  RandomAccessFile 析构函数
   delete tf;
 }
 
 static void UnrefEntry(void* arg1, void* arg2) {
+  // 从 cache 中释放掉 handler
   Cache* cache = reinterpret_cast<Cache*>(arg1);
   Cache::Handle* h = reinterpret_cast<Cache::Handle*>(arg2);
   cache->Release(h);
@@ -55,7 +56,6 @@ TableCache::~TableCache() { delete cache_; }
  * @param file_number sst 的文件编码
  * @param file_size  文件大小
  * @param handle cache 节点
- * @return
  */
 Status TableCache::FindTable(uint64_t file_number, uint64_t file_size, Cache::Handle** handle) {
   Status s;
@@ -83,7 +83,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size, Cache::Ha
       }
     }
     if (s.ok()) {
-      s = Table::Open(options_, file, file_size, &table);
+      s = Table::Open(options_, file, file_size, &table);  // 构造 Table
     }
 
     if (!s.ok()) {
@@ -95,26 +95,42 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size, Cache::Ha
       TableAndFile* tf = new TableAndFile;
       tf->file = file;
       tf->table = table;
+
       *handle = cache_->Insert(key, tf, 1, &DeleteEntry);  // 数据插入到 LRU 缓存链中, 并将 *handle 指向缓存节点
     }
   }
   return s;
 }
 
+/***
+ * 获取指定的 sst 的 datablock 遍历查找工具
+ *
+ * @param options       查找选项
+ * @param file_number   sst 文件编号
+ * @param file_size     sst 文件大小
+ * @param tableptr      table 指针
+ *
+ * @return              datablock 的双层遍历器
+ */
 Iterator* TableCache::NewIterator(const ReadOptions& options, uint64_t file_number, uint64_t file_size, Table** tableptr) {
+
   if (tableptr != nullptr) {
     *tableptr = nullptr;
   }
 
   Cache::Handle* handle = nullptr;
-  Status s = FindTable(file_number, file_size, &handle);
+  Status s = FindTable(file_number, file_size, &handle);  // 读取一个 sst
   if (!s.ok()) {
     return NewErrorIterator(s);
   }
 
+  // 获取 sst 的 table 结构
   Table* table = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-  Iterator* result = table->NewIterator(options);
+
+  Iterator* result = table->NewIterator(options);  // 获取 sst 中的 datablock 访问工具
+
   result->RegisterCleanup(&UnrefEntry, cache_, handle);
+
   if (tableptr != nullptr) {
     *tableptr = table;
   }
@@ -123,6 +139,8 @@ Iterator* TableCache::NewIterator(const ReadOptions& options, uint64_t file_numb
 
 /***
  *
+ *  从指定的 sst 文件中查找指定的key, 如果找到则调用 handle_result(args, key, value)
+ *  这是 Table->InternalGet() 的封装版本
  *
  * @param options
  * @param file_number
@@ -135,6 +153,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options, uint64_t file_numb
 Status TableCache::Get(const ReadOptions& options, uint64_t file_number, uint64_t file_size, const Slice& k, void* arg,
                        void (*handle_result)(void*, const Slice&, const Slice&)) {
   Cache::Handle* handle = nullptr;
+
   Status s = FindTable(file_number, file_size, &handle);
 
   if (s.ok()) {
@@ -146,6 +165,10 @@ Status TableCache::Get(const ReadOptions& options, uint64_t file_number, uint64_
   return s;
 }
 
+/***
+ * 从 cache 中删除这个缓存
+ * @param file_number
+ */
 void TableCache::Evict(uint64_t file_number) {
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);

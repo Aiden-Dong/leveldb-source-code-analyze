@@ -28,13 +28,13 @@ class LEVELDB_EXPORT Table {
 
   /***
    * 静态函数， 而且唯一是共有的接口， 构造 Table 对象
-   * 主要负责解析出基本数据，如 Footer, 然后解析出 metaindex_block, index_block, filter_block, data_block
+   * 主要负责解析出基本数据，如 Footer, 然后解析出 metaindex_block, index_block, filter_block
    * BlockContexts 对象到Block的转换， 其中主要是计算出 restart_offset_ 而且 Block 是可以被遍历的
    *
-   * @param options
-   * @param file
-   * @param file_size
-   * @param table
+   * @param options 配置选项
+   * @param file  需要读取的文件
+   * @param file_size  文件的大小
+   * @param table 需要构建的table
    * @return
    */
   static Status Open(const Options& options, RandomAccessFile* file, uint64_t file_size, Table** table);
@@ -63,14 +63,16 @@ class LEVELDB_EXPORT Table {
 
   struct Rep;
 
-  static Iterator* BlockReader(void*, const ReadOptions&, const Slice&);
+
+  /***
+   * 提供给外部调用的回调函数， 用来加载 datablock
+   */
+  static Iterator* BlockReader(void*param, const ReadOptions&, const Slice&);
 
   explicit Table(Rep* rep) : rep_(rep) {}
 
   // 查找指定的 key, 内部先 bf 判断， 然后缓存获取，最后在读取文件
-  Status InternalGet(const ReadOptions&, const Slice& key, void* arg,
-                     void (*handle_result)(void* arg, const Slice& k,
-                                           const Slice& v));
+  Status InternalGet(const ReadOptions&, const Slice& key, void* arg, void (*handle_result)(void* arg, const Slice& k, const Slice& v));
 
   /**
    * 读取元数据， 主要是 Footer, 然后是 metaindex_handler, fil
