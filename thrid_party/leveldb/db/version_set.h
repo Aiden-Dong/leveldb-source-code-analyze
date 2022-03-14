@@ -42,8 +42,7 @@ class WritableFile;
 // Return the smallest index i such that files[i]->largest >= key.
 // Return files.size() if there is no such file.
 // REQUIRES: "files" contains a sorted list of non-overlapping files.
-int FindFile(const InternalKeyComparator& icmp,
-             const std::vector<FileMetaData*>& files, const Slice& key);
+int FindFile(const InternalKeyComparator& icmp, const std::vector<Fi leMetaData*>& files, const Slice& key);
 
 // Returns true iff some file in "files" overlaps the user key range
 // [*smallest,*largest].
@@ -59,31 +58,52 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
 
 class Version {
  public:
+  /**
+   * 请求的信息
+   */
   struct GetStats {
-    FileMetaData* seek_file;
-    int seek_file_level;
+    FileMetaData* seek_file;      // 要查询的文件
+    int seek_file_level;          // 文件所在的 level
   };
 
-  // Append to *iters a sequence of iterators that will
-  // yield the contents of this Version when merged together.
-  // REQUIRES: This version has been saved (see VersionSet::SaveTo)
+  /***
+   *
+   * version 记录了当前所有的 sst 文件， 很多场景下需要对这些 sst 进行遍历，
+   * 因此 leveldb 中对所有 sst 文件的 iterator 进行了保存， 以便后续使用。
+   *
+   * 保存每一层的迭代器， 其中第0层和非0层创建的迭代器不一样
+   *
+   * 对于 level = 0 的 sstable 文件，直接通过 TableCache::NewIterator() 接口创建，这会直接载入 SST 所有的元数据到内存中。
+   * 对于 level > 0 的 sstable 文件， 通过函数 NewTwoLevelIterator() 创建一个TwoLevelIterator, 这会使用懒加载模式
+   *
+   * @param iters 用于保存 sst 的 Iterator
+   */
   void AddIterators(const ReadOptions&, std::vector<Iterator*>* iters);
 
-  // Lookup the value for key.  If found, store it in *val and
-  // return OK.  Else return a non-OK status.  Fills *stats.
-  // REQUIRES: lock is not held
-  Status Get(const ReadOptions&, const LookupKey& key, std::string* val,
-             GetStats* stats);
+  /***
+   * 从 SST 中读取所需要的数据
+   *
+   * @param key
+   * @param val
+   * @param stats
+   * @return
+   */
+  Status Get(const ReadOptions&, const LookupKey& key, std::string* val, GetStats* stats);
 
-  // Adds "stats" into the current state.  Returns true if a new
-  // compaction may need to be triggered, false otherwise.
-  // REQUIRES: lock is held
+  /***
+   * 当查找文件而且没有找到时， 更新 seek 次数状态
+   *
+   * @param stats
+   * @return
+   */
   bool UpdateStats(const GetStats& stats);
 
-  // Record a sample of bytes read at the specified internal key.
-  // Samples are taken approximately once every config::kReadBytesPeriod
-  // bytes.  Returns true if a new compaction may need to be triggered.
-  // REQUIRES: lock is held
+  /***
+   * 统计读的样本， 主要用在迭代器中
+   *
+   * @param key
+   * @return
+   */
   bool RecordReadSample(Slice key);
 
   // Reference count management (so Versions do not disappear out from
@@ -91,24 +111,48 @@ class Version {
   void Ref();
   void Unref();
 
+  /***
+   * 获取指定 level 层与所给范围重叠的 SST 文件
+   *
+   * @param level    sst 层级
+   * @param begin    起始的 key
+   * @param end      结束的 key
+   * @param inputs
+   */
   void GetOverlappingInputs(
       int level,
       const InternalKey* begin,  // nullptr means before all keys
       const InternalKey* end,    // nullptr means after all keys
       std::vector<FileMetaData*>* inputs);
 
-  // Returns true iff some file in the specified level overlaps
-  // some part of [*smallest_user_key,*largest_user_key].
-  // smallest_user_key==nullptr represents a key smaller than all the DB's keys.
-  // largest_user_key==nullptr represents a key largest than all the DB's keys.
+
+  /***
+   * 判断是否当前 level 层有key重叠
+   *
+   * @param level
+   * @param smallest_user_key
+   * @param largest_user_key
+   * @return
+   */
   bool OverlapInLevel(int level, const Slice* smallest_user_key,
                       const Slice* largest_user_key);
 
-  // Return the level at which we should place a new memtable compaction
-  // result that covers the range [smallest_user_key,largest_user_key].
+
+  /***
+   * 选择内存中数据 dump 到磁盘的哪一层
+   *
+   * @param smallest_user_key
+   * @param largest_user_key
+   * @return
+   */
   int PickLevelForMemTableOutput(const Slice& smallest_user_key,
                                  const Slice& largest_user_key);
 
+  /***
+   * 表示某一层有多少个 sst 文件
+   * @param level
+   * @return
+   */
   int NumFiles(int level) const { return files_[level].size(); }
 
   // Return a human readable string that describes this version's contents.
@@ -133,35 +177,56 @@ class Version {
   Version(const Version&) = delete;
   Version& operator=(const Version&) = delete;
 
+  /***
+   * 删除当前版本中引用为0的file
+   */
   ~Version();
 
+  /***
+   * 创建两层迭代器
+   * @param level
+   * @return
+   */
   Iterator* NewConcatenatingIterator(const ReadOptions&, int level) const;
 
-  // Call func(arg, level, f) for every file that overlaps user_key in
-  // order from newest to oldest.  If an invocation of func returns
-  // false, makes no more calls.
-  //
-  // REQUIRES: user portion of internal_key == user_key.
+  /***
+   * 搜索与指定范围重合的 sst 集合
+   * @param user_key
+   * @param internal_key
+   * @param arg
+   * @param func
+   */
   void ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
                           bool (*func)(void*, int, FileMetaData*));
 
-  VersionSet* vset_;  // VersionSet to which this Version belongs
+  VersionSet* vset_;  // 表示这个 verset 隶属于哪一个 verset_set, 在 leveldb 中只有一个 versetset
+
+  /***
+   * versionset 是一个双向链表结构
+   * 里面每一个 node 是一个 Version
+   */
   Version* next_;     // Next version in linked list
   Version* prev_;     // Previous version in linked list
-  int refs_;          // Number of live refs to this version
 
-  // List of files per level
+  int refs_;          // 有多少服务还引用这个版本
+
+
+  /***
+   * 当前版本的所有数据 -- 二级指针结构
+   * 第一层代表每一个 level 级别
+   * 第二层代表同一个 level 级别下面的 sst 文件number
+   */
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
   // Next file to compact based on seek stats.
-  FileMetaData* file_to_compact_;
-  int file_to_compact_level_;
+  FileMetaData* file_to_compact_;                           // 用于 seek 次数超过阈值之后需要压缩的文件
+  int file_to_compact_level_;                               // 用于 seek 次数超过阈值之后需要压缩的文件所在的level
 
   // Level that should be compacted next and its compaction score.
   // Score < 1 means compaction is not strictly needed.  These fields
   // are initialized by Finalize().
-  double compaction_score_;
-  int compaction_level_;
+  double compaction_score_;                                 // 用于检查 size 超过阈值之后需要压缩的文件
+  int compaction_level_;                                    // 用于检查 size 查过阈值之后需要压缩的文件所在的 level
 };
 
 class VersionSet {

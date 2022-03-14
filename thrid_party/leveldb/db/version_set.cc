@@ -84,8 +84,14 @@ Version::~Version() {
   }
 }
 
-int FindFile(const InternalKeyComparator& icmp,
-             const std::vector<FileMetaData*>& files, const Slice& key) {
+/***
+ * 基于 要查询的 key 定位 files
+ * @param icmp
+ * @param files
+ * @param key
+ * @return
+ */
+int FindFile(const InternalKeyComparator& icmp, const std::vector<FileMetaData*>& files, const Slice& key) {
   uint32_t left = 0;
   uint32_t right = files.size();
   while (left < right) {
@@ -160,12 +166,17 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
 // is the largest key that occurs in the file, and value() is an
 // 16-byte value containing the file number and file size, both
 // encoded using EncodeFixed64.
+
+/***
+ * 同一个 level 的 sst 文件遍历器
+ * 用于 同一 level 下的 sst 二级遍历
+ */
 class Version::LevelFileNumIterator : public Iterator {
  public:
-  LevelFileNumIterator(const InternalKeyComparator& icmp,
-                       const std::vector<FileMetaData*>* flist)
+  LevelFileNumIterator(const InternalKeyComparator& icmp, const std::vector<FileMetaData*>* flist)
       : icmp_(icmp), flist_(flist), index_(flist->size()) {  // Marks as invalid
   }
+
   bool Valid() const override { return index_ < flist_->size(); }
   void Seek(const Slice& target) override {
     index_ = FindFile(icmp_, *flist_, target);
@@ -199,44 +210,58 @@ class Version::LevelFileNumIterator : public Iterator {
   Status status() const override { return Status::OK(); }
 
  private:
-  const InternalKeyComparator icmp_;
-  const std::vector<FileMetaData*>* const flist_;
-  uint32_t index_;
+  const InternalKeyComparator icmp_;                  // key 比较器
+  const std::vector<FileMetaData*>* const flist_;     // 同一个 level 层的数据遍历
+  uint32_t index_;                                    // 当前定位的 sst 文件索引
 
-  // Backing store for value().  Holds the file number and size.
+  /**
+   * sst 文件编号    : 8 bytes
+   * 文件大小        : 8 bytes
+   */
   mutable char value_buf_[16];
 };
 
-static Iterator* GetFileIterator(void* arg, const ReadOptions& options,
-                                 const Slice& file_value) {
+/***
+ * 获取对应 SST 的 TwoLevelIterator
+ *
+ * @param arg          TableCache
+ * @param options
+ * @param file_value   sst 文件编号 + 文件大小
+ * @return
+ */
+static Iterator* GetFileIterator(void* arg, const ReadOptions& options, const Slice& file_value) {
   TableCache* cache = reinterpret_cast<TableCache*>(arg);
   if (file_value.size() != 16) {
-    return NewErrorIterator(
-        Status::Corruption("FileReader invoked with unexpected value"));
+    return NewErrorIterator(Status::Corruption("FileReader invoked with unexpected value"));
   } else {
-    return cache->NewIterator(options, DecodeFixed64(file_value.data()),
-                              DecodeFixed64(file_value.data() + 8));
+    return cache->NewIterator(options, DecodeFixed64(file_value.data()),DecodeFixed64(file_value.data() + 8));
   }
 }
 
-Iterator* Version::NewConcatenatingIterator(const ReadOptions& options,
-                                            int level) const {
-  return NewTwoLevelIterator(
-      new LevelFileNumIterator(vset_->icmp_, &files_[level]), &GetFileIterator,
-      vset_->table_cache_, options);
+/***
+ * 对于同一个 level 的多个 sst 的查询遍历器
+ * 第一层用于定位 sst
+ * 第二层用于 sst 内部遍历
+ * @param options
+ * @param level     要遍历的层级
+ * @return
+ */
+Iterator* Version::NewConcatenatingIterator(const ReadOptions& options,int level) const {
+  return NewTwoLevelIterator(new LevelFileNumIterator(vset_->icmp_, &files_[level]), &GetFileIterator, vset_->table_cache_, options);
 }
 
-void Version::AddIterators(const ReadOptions& options,
-                           std::vector<Iterator*>* iters) {
-  // Merge all level zero files together since they may overlap
+void Version::AddIterators(const ReadOptions& options, std::vector<Iterator*>* iters) {
+
+  // 首先直接加载  Level = 0的这部分数据
+  // 因为这部分 sst 之间数据有重叠， sst 之间无序
+  // 这部分可能会被频繁访问
   for (size_t i = 0; i < files_[0].size(); i++) {
-    iters->push_back(vset_->table_cache_->NewIterator(
-        options, files_[0][i]->number, files_[0][i]->file_size));
+    iters->push_back(vset_->table_cache_->NewIterator(options, files_[0][i]->number, files_[0][i]->file_size));
   }
 
-  // For levels > 0, we can use a concatenating iterator that sequentially
-  // walks through the non-overlapping files in the level, opening them
-  // lazily.
+
+  // 对于 level >0 的这一部分， 因为  sst 之间不重叠且有序
+  // 可以使用 TwoLevelIterator 的方式懒加载这部分数据
   for (int level = 1; level < config::kNumLevels; level++) {
     if (!files_[level].empty()) {
       iters->push_back(NewConcatenatingIterator(options, level));
@@ -246,21 +271,40 @@ void Version::AddIterators(const ReadOptions& options,
 
 // Callback from TableCache::Get()
 namespace {
+
+/***
+ * 查询结果状态标识
+ */
 enum SaverState {
   kNotFound,
   kFound,
   kDeleted,
   kCorrupt,
 };
+
+/***
+ * 保存查询结果
+ */
 struct Saver {
-  SaverState state;
-  const Comparator* ucmp;
-  Slice user_key;
-  std::string* value;
+  SaverState state;             // 保存的查询状态结果  默认 kNnotFound
+  const Comparator* ucmp;       // 用于匹配的比较器  InternalKeyComparator
+  Slice user_key;               // 用户提交的 key
+  std::string* value;           // 获取结果
 };
 }  // namespace
+
+/***
+ * 如果数据已经被查找到， 则保存 value
+ * 数据查询到后首先解析成 ParsedInternalKey, 然后比较 key 是否匹配
+ * 如果数据匹配且有效， 则保存查询结果
+ * @param arg    Saver
+ * @param ikey   匹配的key
+ * @param v      value
+ */
 static void SaveValue(void* arg, const Slice& ikey, const Slice& v) {
   Saver* s = reinterpret_cast<Saver*>(arg);
+
+  // 将 ikey 解析成具有 ParsedInternalKey 格式的 parsed_key
   ParsedInternalKey parsed_key;
   if (!ParseInternalKey(ikey, &parsed_key)) {
     s->state = kCorrupt;
@@ -278,36 +322,60 @@ static bool NewestFirst(FileMetaData* a, FileMetaData* b) {
   return a->number > b->number;
 }
 
-void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
+
+/***
+ * 按层级依次去查询 sst 文件， 找到要查询的key
+ * @param user_key
+ * @param internal_key
+ * @param arg
+ * @param func
+ */
+void Version::ForEachOverlapping(Slice user_key,
+                                 Slice internal_key,
+                                 void* arg,
                                  bool (*func)(void*, int, FileMetaData*)) {
-  const Comparator* ucmp = vset_->icmp_.user_comparator();
+
+  const Comparator* ucmp = vset_->icmp_.user_comparator(); // BytewiseComparator
 
   // Search level-0 in order from newest to oldest.
   std::vector<FileMetaData*> tmp;
   tmp.reserve(files_[0].size());
+
+
+  // level == 0, 需要判断所有的文件
   for (uint32_t i = 0; i < files_[0].size(); i++) {
-    FileMetaData* f = files_[0][i];
+    FileMetaData* f = files_[0][i];  // level-0 的 filemeta
+
+    // 如果文件的 f->smallest < user_key < f->largest
     if (ucmp->Compare(user_key, f->smallest.user_key()) >= 0 &&
         ucmp->Compare(user_key, f->largest.user_key()) <= 0) {
       tmp.push_back(f);
     }
   }
   if (!tmp.empty()) {
+
+    // 为了提高顺序， 按照文件的新旧排序
     std::sort(tmp.begin(), tmp.end(), NewestFirst);
+
     for (uint32_t i = 0; i < tmp.size(); i++) {
+      // 标识如果无需继续查找，则返回
       if (!(*func)(arg, 0, tmp[i])) {
         return;
       }
     }
   }
 
+  // 标识不在 level-0 中， 则去其他level中查询
   // Search other levels.
   for (int level = 1; level < config::kNumLevels; level++) {
     size_t num_files = files_[level].size();
     if (num_files == 0) continue;
 
     // Binary search to find earliest index whose largest key >= internal_key.
+
+    // 定位到要查询的key位于哪个 sst 文件中
     uint32_t index = FindFile(vset_->icmp_, files_[level], internal_key);
+
     if (index < num_files) {
       FileMetaData* f = files_[level][index];
       if (ucmp->Compare(user_key, f->smallest.user_key()) < 0) {
@@ -321,23 +389,32 @@ void Version::ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
   }
 }
 
-Status Version::Get(const ReadOptions& options, const LookupKey& k,
-                    std::string* value, GetStats* stats) {
+Status Version::Get(const ReadOptions& options, const LookupKey& k, std::string* value, GetStats* stats) {
   stats->seek_file = nullptr;
   stats->seek_file_level = -1;
 
+  // 用于 判断是否满足触发 compaction 的条件
   struct State {
-    Saver saver;
-    GetStats* stats;
-    const ReadOptions* options;
-    Slice ikey;
-    FileMetaData* last_file_read;
-    int last_file_read_level;
+
+    Saver saver;                     // 查询结果
+    GetStats* stats;                 // 请求信息
+    const ReadOptions* options;      // 读取选项
+    Slice ikey;                      // 用于匹配的 Key, internalkey
+    FileMetaData* last_file_read;    // 最后一次读取的文件信息
+    int last_file_read_level;        // 最后一次文件所在的 level
 
     VersionSet* vset;
     Status s;
     bool found;
 
+    /**
+     * 判断是否匹配, 如果找到对应的key 或者不需要继续寻找，则返回 False
+     * 如果没有找到，需要继续寻找，则返回 True
+     * @param arg     State 指针
+     * @param level   sst 的层级
+     * @param f       文件元信息
+     * @return
+     */
     static bool Match(void* arg, int level, FileMetaData* f) {
       State* state = reinterpret_cast<State*>(arg);
 
@@ -351,9 +428,10 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
       state->last_file_read = f;
       state->last_file_read_level = level;
 
-      state->s = state->vset->table_cache_->Get(*state->options, f->number,
-                                                f->file_size, state->ikey,
-                                                &state->saver, SaveValue);
+      // 从 sst 中查找对应的 internalkey
+      state->s = state->vset->table_cache_
+          ->Get(*state->options, f->number,f->file_size, state->ikey, &state->saver, SaveValue);
+
       if (!state->s.ok()) {
         state->found = true;
         return false;
@@ -367,8 +445,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
         case kDeleted:
           return false;
         case kCorrupt:
-          state->s =
-              Status::Corruption("corrupted key for ", state->saver.user_key);
+          state->s =Status::Corruption("corrupted key for ", state->saver.user_key);
           state->found = true;
           return false;
       }
@@ -386,8 +463,8 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k,
   state.last_file_read_level = -1;
 
   state.options = &options;
-  state.ikey = k.internal_key();
-  state.vset = vset_;
+  state.ikey = k.internal_key();    // 要查询的 internalkey
+  state.vset = vset_;               // version_set
 
   state.saver.state = kNotFound;
   state.saver.ucmp = vset_->icmp_.user_comparator();

@@ -18,12 +18,12 @@ class VersionSet;
 struct FileMetaData {
   FileMetaData() : refs(0), allowed_seeks(1 << 30), file_size(0) {}
 
-  int refs;
-  int allowed_seeks;  // Seeks allowed until compaction
-  uint64_t number;
-  uint64_t file_size;    // File size in bytes
-  InternalKey smallest;  // Smallest internal key served by table
-  InternalKey largest;   // Largest internal key served by table
+  int refs;              // 引用数量
+  int allowed_seeks;     // Seeks allowed until compaction
+  uint64_t number;       // sst 文件编号
+  uint64_t file_size;    // 文件大小
+  InternalKey smallest;  // sst 文件最小 key
+  InternalKey largest;   // sst 文件最大 key
 };
 
 class VersionEdit {
