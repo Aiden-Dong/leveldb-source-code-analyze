@@ -34,14 +34,17 @@ class TableCache {
 
   ~TableCache();
 
-  // Return an iterator for the specified file number (the corresponding
-  // file length must be exactly "file_size" bytes).  If "tableptr" is
-  // non-null, also sets "*tableptr" to point to the Table object
-  // underlying the returned iterator, or to nullptr if no Table object
-  // underlies the returned iterator.  The returned "*tableptr" object is owned
-  // by the cache and should not be deleted, and is valid for as long as the
-  // returned iterator is live.
-  // 因为 sst 本身是可遍历的， 所以他会对外一个 iter 接口
+
+  /***
+   * 返回改 sst 的 二级索引 TwoLevelIterator
+   * 调用的 table 的NewIterator(...)
+   *
+   * @param options 读取选项
+   * @param file_number sst 文件名称
+   * @param file_size 文件大小
+   * @param tableptr Table
+   * @return
+   */
   Iterator* NewIterator(const ReadOptions& options, uint64_t file_number, uint64_t file_size, Table** tableptr = nullptr);
 
   // If a seek to internal key "k" in specified file finds an entry,

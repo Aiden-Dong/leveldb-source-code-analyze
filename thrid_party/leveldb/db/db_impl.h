@@ -127,6 +127,13 @@ class DBImpl : public DB {
                         VersionEdit* edit, SequenceNumber* max_sequence)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
+  /***
+   * 将 MemTable 的内容写入 SST
+   * @param mem  memtable
+   * @param edit
+   * @param base
+   * @return
+   */
   Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 

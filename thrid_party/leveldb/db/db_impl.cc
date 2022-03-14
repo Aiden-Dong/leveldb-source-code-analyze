@@ -502,6 +502,13 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
   return status;
 }
 
+/***
+ * 写 SST
+ * @param mem
+ * @param edit
+ * @param base
+ * @return
+ */
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
@@ -509,9 +516,8 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   FileMetaData meta;
   meta.number = versions_->NewFileNumber();
   pending_outputs_.insert(meta.number);
-  Iterator* iter = mem->NewIterator();
-  Log(options_.info_log, "Level-0 table #%llu: started",
-      (unsigned long long)meta.number);
+  Iterator* iter = mem->NewIterator();   // 获取 memtable 的迭代器
+  Log(options_.info_log, "Level-0 table #%llu: started", (unsigned long long)meta.number);
 
   Status s;
   {
