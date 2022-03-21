@@ -39,23 +39,39 @@ class Version;
 class VersionSet;
 class WritableFile;
 
-// Return the smallest index i such that files[i]->largest >= key.
-// Return files.size() if there is no such file.
-// REQUIRES: "files" contains a sorted list of non-overlapping files.
-int FindFile(const InternalKeyComparator& icmp, const std::vector<Fi leMetaData*>& files, const Slice& key);
+/***
+ * 对于level>0层的sst，基于Key的定位SST文件
+ * 因为sst是有序的，进行二分查找即可
+ * @param icmp
+ * @param files
+ * @param key
+ * @return
+ */
+int FindFile(const InternalKeyComparator& icmp, const std::vector<FileMetaData*>& files, const Slice& key);
 
-// Returns true iff some file in "files" overlaps the user key range
-// [*smallest,*largest].
-// smallest==nullptr represents a key smaller than all keys in the DB.
-// largest==nullptr represents a key largest than all keys in the DB.
-// REQUIRES: If disjoint_sorted_files, files[] contains disjoint ranges
-//           in sorted order.
+/****
+ * 内部判断给定的 key 上下限，在对应的 level sst 集合中，是否有重合,
+ * 被 Version::OverlapInLevel 调用
+ *
+ * @param icmp                    key比较器
+ * @param disjoint_sorted_files   是否是level-0层文件
+ * @param files                   指定的level的sst集合
+ * @param smallest_user_key       Key下限
+ * @param largest_user_key        key上限
+ * @return
+ */
 bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            bool disjoint_sorted_files,
                            const std::vector<FileMetaData*>& files,
                            const Slice* smallest_user_key,
                            const Slice* largest_user_key);
 
+/****
+ * DB 下面所有的 SST 访问空间
+ * 在 mem_cache 中数据定期溢写出一个SST文件， 构成的 level-0 层sst
+ * 由此可见， level-0 层的sst文件，每个sst内部数据有序， 但是 sst 之间数据无序。
+ * 当 level-0 层的数据规模超过一定程度后， 就会与下一层合并， 合并过程中会保证 sst 之前的有序性
+ */
 class Version {
  public:
   /**
@@ -111,13 +127,17 @@ class Version {
   void Ref();
   void Unref();
 
-  /***
-   * 获取指定 level 层与所给范围重叠的 SST 文件
+  /****
+   * 在所给定的 level 中找出和[begin, end]有重合的 sstable 文件
+   * 注意的是 level-0 层多个文件存在重叠，需要单独遍历每个文件
    *
-   * @param level    sst 层级
-   * @param begin    起始的 key
-   * @param end      结束的 key
-   * @param inputs
+   * 改函数常被用来压缩的时候使用，根据 leveldb 的设计， level 层合并 Level+1 层Merge时候，level中所有重叠的sst都会参加。
+   * 这一点需要特别注意。
+   *
+   * @param level    要查找的层级
+   * @param begin    开始查询的 key
+   * @param end      结束查询的 key
+   * @param inputs   用于收集重叠的文件
    */
   void GetOverlappingInputs(
       int level,
@@ -127,14 +147,15 @@ class Version {
 
 
   /***
-   * 判断是否当前 level 层有key重叠
-   *
-   * @param level
-   * @param smallest_user_key
-   * @param largest_user_key
+   * 检查是否和指定 level 的文件有重叠。
+   * 内部直接调用 SomeFileOverlapsRange
+   * @param level                 要检查的 level 层
+   * @param smallest_user_key     给定的重叠 key 下限
+   * @param largest_user_key      给定的重叠 key 的上限
    * @return
    */
-  bool OverlapInLevel(int level, const Slice* smallest_user_key,
+  bool OverlapInLevel(int level,
+                      const Slice* smallest_user_key,
                       const Slice* largest_user_key);
 
 
@@ -183,21 +204,23 @@ class Version {
   ~Version();
 
   /***
-   * 创建两层迭代器
-   * @param level
+   * 对于同一个 level 的多个 sst 的查询遍历器
+   * 应用在 level > 0 层级别上
+   * 第一层用于定位 sst 第二层用于 sst 内部遍历
+   * @param options
+   * @param level     要遍历的层级
    * @return
    */
   Iterator* NewConcatenatingIterator(const ReadOptions&, int level) const;
 
   /***
-   * 搜索与指定范围重合的 sst 集合
+   * 按层级依次去查询 sst 文件， 找到要查询的key
    * @param user_key
    * @param internal_key
    * @param arg
    * @param func
    */
-  void ForEachOverlapping(Slice user_key, Slice internal_key, void* arg,
-                          bool (*func)(void*, int, FileMetaData*));
+  void ForEachOverlapping(Slice user_key, Slice internal_key, void* arg, bool (*func)(void*, int, FileMetaData*));
 
   VersionSet* vset_;  // 表示这个 verset 隶属于哪一个 verset_set, 在 leveldb 中只有一个 versetset
 
@@ -228,6 +251,12 @@ class Version {
   double compaction_score_;                                 // 用于检查 size 超过阈值之后需要压缩的文件
   int compaction_level_;                                    // 用于检查 size 查过阈值之后需要压缩的文件所在的 level
 };
+
+
+
+
+
+
 
 class VersionSet {
  public:
