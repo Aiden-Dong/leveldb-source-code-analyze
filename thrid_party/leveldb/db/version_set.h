@@ -257,7 +257,22 @@ class Version {
 
 
 
-
+/****
+ * leveldb 为了支持 mvcc 引入了 Version 和 VersionEdit 的概念
+ * 并且引入了 VersionSet 的概念用来管理 Version
+ *
+ * VersionSet 是一个双向链表结构，整个 db 只有一个 VersionSet
+ *
+ * Current Version          VersionEdit
+ * ---------------          ------------
+ *      |                         |
+ *      |-------------------------|
+ *                   |
+ *                   |
+ *               New  Version
+ *
+ *
+ */
 class VersionSet {
  public:
   VersionSet(const std::string& dbname, const Options* options,
@@ -387,26 +402,26 @@ class VersionSet {
 
   void AppendVersion(Version* v);
 
-  Env* const env_;
-  const std::string dbname_;
-  const Options* const options_;
-  TableCache* const table_cache_;
-  const InternalKeyComparator icmp_;
-  uint64_t next_file_number_;
-  uint64_t manifest_file_number_;
-  uint64_t last_sequence_;
-  uint64_t log_number_;
-  uint64_t prev_log_number_;  // 0 or backing store for memtable being compacted
+  Env* const env_;                      // 系统操作相关
+  const std::string dbname_;            // 数据库名字
+  const Options* const options_;        // 选项信息
+  TableCache* const table_cache_;       // sst 内容读取
+  const InternalKeyComparator icmp_;    // InternalKey 比较器
+  uint64_t next_file_number_;           // 下一个文件编号
+  uint64_t manifest_file_number_;       // manifest文件编号
+  uint64_t last_sequence_;              // 最后一个seqnum
+  uint64_t log_number_;                 // 记录当前的日志编号
+  uint64_t prev_log_number_;            // 0 or backing store for memtable being compacted
 
   // Opened lazily
-  WritableFile* descriptor_file_;
-  log::Writer* descriptor_log_;
-  Version dummy_versions_;  // Head of circular doubly-linked list of versions.
-  Version* current_;        // == dummy_versions_.prev_
+  WritableFile* descriptor_file_;       // 用于写manifest文件，其中Log格式和WAL一致
+  log::Writer* descriptor_log_;         // 用于写manifest文件，其中Log格式和WAL一致
+  Version dummy_versions_;              // version 双向链表， 其中pre指向最新的current
+  Version* current_;                     // == dummy_versions_.prev_, 指向最新的版本
 
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
-  std::string compact_pointer_[config::kNumLevels];
+  std::string compact_pointer_[config::kNumLevels];    // 记录每一层在下一次需要压缩的largest key
 };
 
 // A Compaction encapsulates information about a compaction.

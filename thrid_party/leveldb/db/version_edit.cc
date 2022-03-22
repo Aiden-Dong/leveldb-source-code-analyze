@@ -40,6 +40,7 @@ void VersionEdit::Clear() {
 }
 
 void VersionEdit::EncodeTo(std::string* dst) const {
+  // 序列化
   if (has_comparator_) {
     PutVarint32(dst, kComparator);
     PutLengthPrefixedSlice(dst, comparator_);
@@ -103,6 +104,11 @@ static bool GetLevel(Slice* input, int* level) {
   }
 }
 
+/***
+ * 数据反序列化
+ * @param src 将 字节流信息
+ * @return
+ */
 Status VersionEdit::DecodeFrom(const Slice& src) {
   Clear();
   Slice input = src;
