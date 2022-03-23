@@ -17,7 +17,8 @@ namespace leveldb {
 Status WriteStringToFileSync(Env* env, const Slice& data,
                              const std::string& fname);
 
-static std::string MakeFileName(const std::string& dbname, uint64_t number,
+static std::string MakeFileName(const std::string& dbname,
+                                uint64_t number,
                                 const char* suffix) {
   char buf[100];
   std::snprintf(buf, sizeof(buf), "/%06llu.%s",static_cast<unsigned long long>(number), suffix);
@@ -42,8 +43,7 @@ std::string SSTTableFileName(const std::string& dbname, uint64_t number) {
 std::string DescriptorFileName(const std::string& dbname, uint64_t number) {
   assert(number > 0);
   char buf[100];
-  std::snprintf(buf, sizeof(buf), "/MANIFEST-%06llu",
-                static_cast<unsigned long long>(number));
+  std::snprintf(buf, sizeof(buf), "/MANIFEST-%06llu",static_cast<unsigned long long>(number));
   return dbname + buf;
 }
 
@@ -119,15 +119,33 @@ bool ParseFileName(const std::string& filename, uint64_t* number,
   return true;
 }
 
-Status SetCurrentFile(Env* env, const std::string& dbname,
-                      uint64_t descriptor_number) {
-  // Remove leading "dbname/" and add newline to manifest file name
+/****
+ * 设置 dbname/MANIFEST-{descriptor_number} 为当前使用的 MANIFEST
+ * 在 CURRENT 中填充 dbname/MANIFEST-{descriptor_number}
+ * 有软连的意思
+ *
+ * @param env                系统操作句柄
+ * @param dbname             数据库名称
+ * @param descriptor_number  描述符
+ */
+Status SetCurrentFile(Env* env, const std::string& dbname, uint64_t descriptor_number) {
+
+  // dbname/MANIFEST-{descriptor_number}
   std::string manifest = DescriptorFileName(dbname, descriptor_number);
+
+  // contents = MANIFEST-{descriptor_number}
   Slice contents = manifest;
   assert(contents.starts_with(dbname + "/"));
   contents.remove_prefix(dbname.size() + 1);
+
+  // tmp = dbname/{descriptor_number}.dbtmp
   std::string tmp = TempFileName(dbname, descriptor_number);
+
+  // 将 "MANIFEST-{descriptor_number}" 数据写入到 dbname/{descriptor_number}.dbtmp
   Status s = WriteStringToFileSync(env, contents.ToString() + "\n", tmp);
+
+  // 将 dbname/{descriptor_number}.dbtmp 重命名为
+
   if (s.ok()) {
     s = env->RenameFile(tmp, CurrentFileName(dbname));
   }

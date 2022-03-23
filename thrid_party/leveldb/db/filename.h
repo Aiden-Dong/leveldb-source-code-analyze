@@ -36,7 +36,7 @@
  *         - kDescriptorFile  --------------------- dbname/MANIFEST-[0-9]
  *                            MANIFEST 文件列出了组成每个 level 的一组排序表、相应的键范围和其他重要的元数据。
  *                            每当重新打开数据库时，都会创建一个新的 MANIFEST 文件（文件名中嵌入了一个新编号）。
- *                            MANIFEST 文件被格式化为日志，并且对服务状态所做的更改（如文件的添加或删除）追加到此日志中。
+ *                            MANIFEST 文件被格式化为日志，并且对服务状态所做的更改（如文件的添加或删除 VersionEdit）追加到此日志中。
  *         - kCurrentFile     --------------------- dbname/CURRENT        记载当前manifest文件名
  *                            CURRENT 是一个简单的文本文件，其中包含最新的 MANIFEST 文件的名称。
  *         - kTempFile        --------------------- dbname/[0-9].dbtmp    在 repair 数据库时，会重放wal日志，将这些和已有的sst合并写到临时文件中去，成功之后调用 rename 原子重命名

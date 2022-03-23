@@ -275,107 +275,181 @@ class Version {
  */
 class VersionSet {
  public:
-  VersionSet(const std::string& dbname, const Options* options,
-             TableCache* table_cache, const InternalKeyComparator*);
+
+  /***
+   * 构造函数，在创建数据库时只创建一次
+   *
+   * @param dbname        数据库名称
+   * @param options       选项
+   * @param table_cache   sst 读取器
+   */
+  VersionSet(const std::string& dbname,
+             const Options* options,
+             TableCache* table_cache,
+             const InternalKeyComparator*);
+
   VersionSet(const VersionSet&) = delete;
   VersionSet& operator=(const VersionSet&) = delete;
 
   ~VersionSet();
 
-  // Apply *edit to the current version to form a new descriptor that
-  // is both saved to persistent state and installed as the new
-  // current version.  Will release *mu while actually writing to the file.
-  // REQUIRES: *mu is held on entry.
-  // REQUIRES: no other thread concurrently calls LogAndApply()
+  /*****
+   * 修改记录的持久化操作
+   *
+   * 将VersionEdit信息填充到Manifest文件中
+   * 并将当前的修改记录VersionEdit迭代到新的Version里面
+   *
+   * @param edit  当前的修改记录
+   * @param mu    文件锁
+   */
   Status LogAndApply(VersionEdit* edit, port::Mutex* mu)
       EXCLUSIVE_LOCKS_REQUIRED(mu);
 
-  // Recover the last saved descriptor from persistent storage.
+
+  /***
+   * 从持久化的状态恢复 打开db时候会调用该函数
+   * @param save_manifest
+   * @return
+   */
   Status Recover(bool* save_manifest);
 
-  // Return the current version.
+  /****
+   * 获取当前版本
+   */
   Version* current() const { return current_; }
 
-  // Return the current manifest file number
+  /****
+   * 获取 manifest 文件编号
+   * @return
+   */
   uint64_t ManifestFileNumber() const { return manifest_file_number_; }
 
-  // Allocate and return a new file number
+  /***
+   * 分配并返回全局新的文件编号
+   * 该编号从manifest读取并且初始化新的
+   * @return
+   */
   uint64_t NewFileNumber() { return next_file_number_++; }
 
-  // Arrange to reuse "file_number" unless a newer file number has
-  // already been allocated.
-  // REQUIRES: "file_number" was returned by a call to NewFileNumber().
+  /*****
+   * 重用fileNum, 比如 manifest
+   */
   void ReuseFileNumber(uint64_t file_number) {
     if (next_file_number_ == file_number + 1) {
       next_file_number_ = file_number;
     }
   }
 
-  // Return the number of Table files at the specified level.
+
+  /****
+   * 某一层文件的总个数
+   * @param level 层数
+   */
   int NumLevelFiles(int level) const;
 
-  // Return the combined file size of all files at the specified level.
+  /***
+   * 某一层文件的总字节数
+   * @param level
+   * @return
+   */
   int64_t NumLevelBytes(int level) const;
 
-  // Return the last sequence number.
+  /***
+   * 返回当前的 last_sequence_
+   * @return
+   */
   uint64_t LastSequence() const { return last_sequence_; }
 
-  // Set the last sequence number to s.
+  /***
+   * 设置 last_sequence_
+   * @param s
+   */
   void SetLastSequence(uint64_t s) {
     assert(s >= last_sequence_);
     last_sequence_ = s;
   }
 
-  // Mark the specified file number as used.
+  /****
+   * 标记 number 已经被使用
+   * @param number
+   */
   void MarkFileNumberUsed(uint64_t number);
 
-  // Return the current log file number.
+  /***
+   * 获取当前的日志编号
+   * @return
+   */
   uint64_t LogNumber() const { return log_number_; }
 
-  // Return the log file number for the log file that is currently
-  // being compacted, or zero if there is no such log file.
+  /****
+   * 返回前一个已经被压缩的日志编号
+   * @return
+   */
   uint64_t PrevLogNumber() const { return prev_log_number_; }
 
-  // Pick level and inputs for a new compaction.
-  // Returns nullptr if there is no compaction to be done.
-  // Otherwise returns a pointer to a heap-allocated object that
-  // describes the compaction.  Caller should delete the result.
+  /****
+   * 选择参与压缩的 level 和文件
+   * @return
+   */
   Compaction* PickCompaction();
 
-  // Return a compaction object for compacting the range [begin,end] in
-  // the specified level.  Returns nullptr if there is nothing in that
-  // level that overlaps the specified range.  Caller should delete
-  // the result.
-  Compaction* CompactRange(int level, const InternalKey* begin,
+  /***
+   * 返回在level层，[begin,end]范围内可以压缩数据
+   * @param level
+   * @param begin
+   * @param end
+   * @return
+   */
+  Compaction* CompactRange(int level,
+                           const InternalKey* begin,
                            const InternalKey* end);
 
-  // Return the maximum overlapping data (in bytes) at next level for any
-  // file at a level >= 1.
+
+  /****
+   * 获取 level 层与 level+1层重叠的字节数
+   * @return
+   */
   int64_t MaxNextLevelOverlappingBytes();
 
-  // Create an iterator that reads over the compaction inputs for "*c".
-  // The caller should delete the iterator when no longer needed.
+  /****
+   * 为参与压缩的文件创建一个迭代器
+   * @param c
+   * @return
+   */
   Iterator* MakeInputIterator(Compaction* c);
 
-  // Returns true iff some level needs a compaction.
+  /***
+   * 判断是否需要压缩 (size/seek触发)
+   * @return
+   */
   bool NeedsCompaction() const {
     Version* v = current_;
     return (v->compaction_score_ >= 1) || (v->file_to_compact_ != nullptr);
   }
 
-  // Add all files listed in any live version to *live.
-  // May also mutate some internal state.
+  /****
+   * 添加当前所有有效的 SST
+   * @param live
+   */
   void AddLiveFiles(std::set<uint64_t>* live);
 
-  // Return the approximate offset in the database of the data for
-  // "key" as of version "v".
+  /**
+   * 获得 key 近似的偏移量
+   * @param v
+   * @param key
+   * @return
+   */
   uint64_t ApproximateOffsetOf(Version* v, const InternalKey& key);
 
-  // Return a human-readable short (single-line) summary of the number
-  // of files per level.  Uses *scratch as backing store.
+
+  /****
+   * 每一行一个 level文件元数据
+   * 主要是文件的大小
+   */
   struct LevelSummaryStorage {
     char buffer[100];
   };
+
   const char* LevelSummary(LevelSummaryStorage* scratch) const;
 
  private:
@@ -384,22 +458,51 @@ class VersionSet {
   friend class Compaction;
   friend class Version;
 
+  /***
+   * 基于配置与当前Manifest的文件大小，决定是否继续使用这个 Manifest
+   */
   bool ReuseManifest(const std::string& dscname, const std::string& dscbase);
 
+  /****
+   * 收尾工作， 计算下一次需要压缩的文件
+   * @param v
+   */
   void Finalize(Version* v);
 
-  void GetRange(const std::vector<FileMetaData*>& inputs, InternalKey* smallest,
+  /***
+   * 获取给定input范围的最大值与最小值
+   * @param inputs
+   * @param smallest
+   * @param largest
+   */
+  void GetRange(const std::vector<FileMetaData*>& inputs,
+                InternalKey* smallest,
                 InternalKey* largest);
 
   void GetRange2(const std::vector<FileMetaData*>& inputs1,
                  const std::vector<FileMetaData*>& inputs2,
-                 InternalKey* smallest, InternalKey* largest);
+                 InternalKey* smallest,
+                 InternalKey* largest);
 
+  /****
+   * 在Level+1层获取所有与当前的文件集合有key重叠的文件
+   * @param c
+   */
   void SetupOtherInputs(Compaction* c);
 
-  // Save current contents to *log
+  /***
+   * 将当前的状态写入日志
+   * @param log
+   * @return
+   */
   Status WriteSnapshot(log::Writer* log);
 
+  /***
+   * 将新的 Version 放置到 VersionSet 双向链表中，
+   * 并将 Current 指向最新的 Version
+   *
+   * @param 新插入的 version
+   */
   void AppendVersion(Version* v);
 
   Env* const env_;                      // 系统操作相关
@@ -414,8 +517,8 @@ class VersionSet {
   uint64_t prev_log_number_;            // 0 or backing store for memtable being compacted
 
   // Opened lazily
-  WritableFile* descriptor_file_;       // 用于写manifest文件，其中Log格式和WAL一致
-  log::Writer* descriptor_log_;         // 用于写manifest文件，其中Log格式和WAL一致
+  WritableFile* descriptor_file_;       // 用于写manifest文件，其中Log格式和WAL一致  {dbname}/MANIFEST-{manifest_file_number_}
+  log::Writer* descriptor_log_;         // 以写Block的方式写manifest文件， 内部还是引用的 descriptor_file_
   Version dummy_versions_;              // version 双向链表， 其中pre指向最新的current
   Version* current_;                     // == dummy_versions_.prev_, 指向最新的版本
 
