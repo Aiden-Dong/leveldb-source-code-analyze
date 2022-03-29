@@ -241,13 +241,15 @@ class Version {
    */
   std::vector<FileMetaData*> files_[config::kNumLevels];
 
-  // Next file to compact based on seek stats.
+
+
+  // 用于压缩的标记
+
+  // 压缩触发条件 1 ： 基于文件 seek 的压缩方式
   FileMetaData* file_to_compact_;                           // 用于 seek 次数超过阈值之后需要压缩的文件
   int file_to_compact_level_;                               // 用于 seek 次数超过阈值之后需要压缩的文件所在的level
 
-  // Level that should be compacted next and its compaction score.
-  // Score < 1 means compaction is not strictly needed.  These fields
-  // are initialized by Finalize().
+  // 压缩触发条件 2 ： 基于文件大小超过阈值的压缩方式
   double compaction_score_;                                 // 用于检查 size 超过阈值之后需要压缩的文件
   int compaction_level_;                                    // 用于检查 size 查过阈值之后需要压缩的文件所在的 level
 };
@@ -524,7 +526,9 @@ class VersionSet {
 
   // Per-level key at which the next compaction at that level should start.
   // Either an empty string, or a valid InternalKey.
-  std::string compact_pointer_[config::kNumLevels];    // 记录每一层在下一次需要压缩的largest key
+  // 记录每一层在下一次需要压缩的largest key
+  // 就是一个偏移， 记录当前压缩位置
+  std::string compact_pointer_[config::kNumLevels];
 };
 
 // A Compaction encapsulates information about a compaction.
