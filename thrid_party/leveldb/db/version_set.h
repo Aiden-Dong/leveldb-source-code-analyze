@@ -531,38 +531,67 @@ class VersionSet {
   std::string compact_pointer_[config::kNumLevels];
 };
 
-// A Compaction encapsulates information about a compaction.
+
+/****
+ * 通过 VersionSet::PickCompaction() 构造
+ * leveldb 中 level 之间的 compaction 是 leveldb 一个核心功能，由一个背景线程执行。
+ * 背景线程中 BackgroundCompaction() 函数完成主体工作，包括两个任务：
+ *
+ *   若imm_非空，则将imm_写入到磁盘，生成新的level 0中的sstable文件；
+ *
+ *   根据一些依据来选择某个 level 比如level-n，将 level-n 中的文件与 level-(n+1) 的文件进行合并，避免 level-n 中文件过多，
+ *   同时在这个过程中删除掉过期的kv以及被用户删除的kv。
+ */
 class Compaction {
  public:
   ~Compaction();
 
-  // Return the level that is being compacted.  Inputs from "level"
-  // and "level+1" will be merged to produce a set of "level+1" files.
+  /***
+   * 返回 level_ 层。
+   * 当前要合并的是 level 层与 level+1 层
+   */
   int level() const { return level_; }
 
-  // Return the object that holds the edits to the descriptor done
-  // by this compaction.
+  /***
+   * 返回此次合并的 VersionEdit
+   */
   VersionEdit* edit() { return &edit_; }
 
-  // "which" must be either 0 or 1
+  /****
+   * 返回当前inputs_[which] 下的 sst 文件数量
+   * @param which 只能为 0/1 0:level层， 1:level+1层
+   */
   int num_input_files(int which) const { return inputs_[which].size(); }
 
-  // Return the ith input file at "level()+which" ("which" must be 0 or 1).
+  /****
+   * 返回当前 inputs_ 下的某一个 sst 文件
+   * @param which
+   */
   FileMetaData* input(int which, int i) const { return inputs_[which][i]; }
 
-  // Maximum size of files to build during this compaction.
+
+  /****
+   * 返回当前合并最大生成的文件的数量
+   */
   uint64_t MaxOutputFileSize() const { return max_output_file_size_; }
 
-  // Is this a trivial compaction that can be implemented by just
-  // moving a single input file to the next level (no merging or splitting)
+  /****
+   * 是否只是简单移动文件
+   * 如果 inputs_[1]中没有文件， inputs_[0] 中只有一个文件
+   * 同时 grandparents_ 中有交集的文件总size小于配置值，
+   * 这是为了避免创建的单个level+1文件后续 merge 到 level+2 时的高开销
+   */
   bool IsTrivialMove() const;
 
-  // Add all inputs to this compaction as delete operations to *edit.
+  /****
+   * 所有参与compaction的level层与level+1层文件都记录到edit->delete_files,以便后续删除
+   */
   void AddInputDeletions(VersionEdit* edit);
 
-  // Returns true if the information we have available guarantees that
-  // the compaction is producing data in "level+1" for which no data exists
-  // in levels greater than "level+1".
+  /****
+   * 如果 user_key 在大于level+1(level+2, level+3, ...) 的 level 中并不存在的所有sst 的key的范围则返回true
+   * 则返回false
+   */
   bool IsBaseLevelForKey(const Slice& user_key);
 
   // Returns true iff we should stop building the current output
@@ -574,26 +603,31 @@ class Compaction {
   void ReleaseInputs();
 
  private:
+
   friend class Version;
   friend class VersionSet;
 
   Compaction(const Options* options, int level);
 
-  int level_;
-  uint64_t max_output_file_size_;
-  Version* input_version_;
-  VersionEdit edit_;
 
-  // Each compaction reads inputs from "level_" and "level_+1"
-  std::vector<FileMetaData*> inputs_[2];  // The two sets of inputs
+  // 要合并的 level, 在数据合并时，
+  // 要将 level 层与 level+1 层进行合并
+  int level_;
+
+  uint64_t max_output_file_size_;         // 合并的新文件的阈值大小
+  Version* input_version_;                // 当前操作的版本
+  VersionEdit edit_;                      // 当前版本的操作记录
+
+  std::vector<FileMetaData*> inputs_[2];  // 记录要合并的level层与level+1层
+                                          // input_[0] 为要合并的 level 层的所有sst
+                                          // input_[1] 为要合并的 level+1 层的所有sst
 
   // State used to check for number of overlapping grandparent files
   // (parent == level_ + 1, grandparent == level_ + 2)
   std::vector<FileMetaData*> grandparents_;
   size_t grandparent_index_;  // Index in grandparent_starts_
   bool seen_key_;             // Some output key has been seen
-  int64_t overlapped_bytes_;  // Bytes of overlap between current output
-                              // and grandparent files
+  int64_t overlapped_bytes_;  // 输出和祖辈文件之间的重叠字节数
 
   // State for implementing IsBaseLevelForKey
 
