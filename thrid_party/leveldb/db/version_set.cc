@@ -1495,7 +1495,7 @@ int64_t VersionSet::MaxNextLevelOverlappingBytes() {
 }
 
 /***
- * 基于指定 sst , 判断这一个sst的最大 key 与 最小的key
+ * 基于给定的 sst 列表， 返回其中最大的 user_key 与最小的  user_key
  * @param inputs  对应层的sst文件
  * @param smallest  返回的最小值
  * @param largest   返回的最大值
@@ -1675,21 +1675,27 @@ bool FindLargestKey(const InternalKeyComparator& icmp,
   return true;
 }
 
-// Finds minimum file b2=(l2, u2) in level file for which l2 > u1 and
-// user_key(l2) = user_key(u1)
-FileMetaData* FindSmallestBoundaryFile(
-    const InternalKeyComparator& icmp,
-    const std::vector<FileMetaData*>& level_files,
-    const InternalKey& largest_key) {
+/****
+ *
+ * @param icmp               user_key 比较器
+ * @param level_files        对应的 level 层的所有 sst
+ * @param largest_key        要压缩的最大的 user_key  ---- 压缩的sst 的 level_files level 层相同
+ */
+FileMetaData* FindSmallestBoundaryFile(const InternalKeyComparator& icmp,
+                                       const std::vector<FileMetaData*>& level_files,
+                                       const InternalKey& largest_key) {
+
   const Comparator* user_cmp = icmp.user_comparator();
+
   FileMetaData* smallest_boundary_file = nullptr;
+
   for (size_t i = 0; i < level_files.size(); ++i) {
+
     FileMetaData* f = level_files[i];
-    if (icmp.Compare(f->smallest, largest_key) > 0 &&
-        user_cmp->Compare(f->smallest.user_key(), largest_key.user_key()) ==
-            0) {
-      if (smallest_boundary_file == nullptr ||
-          icmp.Compare(f->smallest, smallest_boundary_file->smallest) < 0) {
+
+    if (icmp.Compare(f->smallest, largest_key) > 0 && user_cmp->Compare(f->smallest.user_key(), largest_key.user_key()) ==0) {
+
+      if (smallest_boundary_file == nullptr || icmp.Compare(f->smallest, smallest_boundary_file->smallest) < 0) {
         smallest_boundary_file = f;
       }
     }
@@ -1710,14 +1716,12 @@ FileMetaData* FindSmallestBoundaryFile(
 //
 // parameters:
 //   in     level_files:      List of files to search for boundary files.
-//   in/out compaction_files: List of files to extend by adding boundary files
-//
 
 /****
  *
  * @param icmp               比较器
- * @param level_files        对应的 level 层的所有的sst文件
- * @param compaction_files   当前要压缩的文件
+ * @param level_files        对应层的所有的 SST
+ * @param compaction_files   用于压缩的 SST
  */
 void AddBoundaryInputs(const InternalKeyComparator& icmp,
                        const std::vector<FileMetaData*>& level_files,
@@ -1725,7 +1729,7 @@ void AddBoundaryInputs(const InternalKeyComparator& icmp,
 
   InternalKey largest_key;
 
-  // Quick return if compaction_files is empty.
+  // 找到要压缩的 sst 的最大的 user_key
   if (!FindLargestKey(icmp, *compaction_files, &largest_key)) {
     return;
   }
@@ -1744,9 +1748,15 @@ void AddBoundaryInputs(const InternalKeyComparator& icmp,
   }
 }
 
+/****
+ * 计算 level +1 层需要参与的文件
+ *
+ * 尽可能选择多个文件进行压缩
+ * @param c
+ */
 void VersionSet::SetupOtherInputs(Compaction* c) {
 
-  const int level = c->level();
+  const int level = c->level();     // 记录要压缩的层
   InternalKey smallest, largest;
 
   // 处理 level 层的临界值，
@@ -1771,21 +1781,19 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
     const int64_t inputs0_size = TotalFileSize(c->inputs_[0]);
     const int64_t inputs1_size = TotalFileSize(c->inputs_[1]);
     const int64_t expanded0_size = TotalFileSize(expanded0);
-    if (expanded0.size() > c->inputs_[0].size() &&
-        inputs1_size + expanded0_size <
-            ExpandedCompactionByteSizeLimit(options_)) {
+    if (expanded0.size() > c->inputs_[0].size() && inputs1_size + expanded0_size < ExpandedCompactionByteSizeLimit(options_)) {
       InternalKey new_start, new_limit;
       GetRange(expanded0, &new_start, &new_limit);
       std::vector<FileMetaData*> expanded1;
-      current_->GetOverlappingInputs(level + 1, &new_start, &new_limit,
-                                     &expanded1);
+      current_->GetOverlappingInputs(level + 1, &new_start, &new_limit, &expanded1);
       AddBoundaryInputs(icmp_, current_->files_[level + 1], &expanded1);
       if (expanded1.size() == c->inputs_[1].size()) {
-        Log(options_->info_log,
+       Log(options_->info_log,
             "Expanding@%d %d+%d (%ld+%ld bytes) to %d+%d (%ld+%ld bytes)\n",
             level, int(c->inputs_[0].size()), int(c->inputs_[1].size()),
             long(inputs0_size), long(inputs1_size), int(expanded0.size()),
             int(expanded1.size()), long(expanded0_size), long(inputs1_size));
+
         smallest = new_start;
         largest = new_limit;
         c->inputs_[0] = expanded0;
@@ -1809,7 +1817,11 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   c->edit_.SetCompactPointer(level, largest);
 }
 
-Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
+/****
+ * 用于手动触发压缩
+ */
+Compaction* VersionSet::CompactRange(int level,
+                                     const InternalKey* begin,
                                      const InternalKey* end) {
   std::vector<FileMetaData*> inputs;
   current_->GetOverlappingInputs(level, begin, end, &inputs);
@@ -1817,13 +1829,14 @@ Compaction* VersionSet::CompactRange(int level, const InternalKey* begin,
     return nullptr;
   }
 
-  // Avoid compacting too much in one shot in case the range is large.
-  // But we cannot do this for level-0 since level-0 files can overlap
-  // and we must not pick one file and drop another older file if the
-  // two files overlap.
+  // 需要避免再一次操作中要参与压缩的文件太多
+  // 所以在 level+1 层，我们将合并的文件字节数不能太大
+  // 但是针对第0层我们不会处理，因为第0层文件之间允许它重复，所以会选择很多个
   if (level > 0) {
-    const uint64_t limit = MaxFileSizeForLevel(options_, level);
+    const uint64_t limit = MaxFileSizeForLevel(options_, level);  // 计算最大的文件限制
+
     uint64_t total = 0;
+
     for (size_t i = 0; i < inputs.size(); i++) {
       uint64_t s = inputs[i]->file_size;
       total += s;
