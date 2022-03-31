@@ -1653,10 +1653,11 @@ Compaction* VersionSet::PickCompaction() {
 
 
 /***
- * 获取要压缩的文件的最大的key
- * @param icmp
- * @param files
- * @param largest_key
+ * 依次遍历要压缩的所有的 sst, 跟每个 sst 的 largest 比较， 找到最大的 largest_key 返回
+ * 如果没有要压缩的文件， 返回 false
+ * @param icmp           比较器
+ * @param files          要压缩的文件
+ * @param largest_key    返回的最大 key
  * @return
  */
 bool FindLargestKey(const InternalKeyComparator& icmp,
@@ -1689,12 +1690,16 @@ FileMetaData* FindSmallestBoundaryFile(const InternalKeyComparator& icmp,
 
   FileMetaData* smallest_boundary_file = nullptr;
 
+  // 遍历所有的sst 文件
   for (size_t i = 0; i < level_files.size(); ++i) {
 
     FileMetaData* f = level_files[i];
 
+    // 意思就是说 f->smallest 跟 largest_key 是相同的 user_key
+    // 仅仅是 largest_key 版本比 f->smallest 版本大
     if (icmp.Compare(f->smallest, largest_key) > 0 && user_cmp->Compare(f->smallest.user_key(), largest_key.user_key()) ==0) {
 
+      // 记录一个版本最小的
       if (smallest_boundary_file == nullptr || icmp.Compare(f->smallest, smallest_boundary_file->smallest) < 0) {
         smallest_boundary_file = f;
       }
@@ -1734,13 +1739,16 @@ void AddBoundaryInputs(const InternalKeyComparator& icmp,
     return;
   }
 
+  // 对于同一个user_key跨越sst的问题需要扩充
   bool continue_searching = true;
+
   while (continue_searching) {
+
     FileMetaData* smallest_boundary_file = FindSmallestBoundaryFile(icmp, level_files, largest_key);
 
     // If a boundary file was found advance largest_key, otherwise we're done.
     if (smallest_boundary_file != NULL) {
-      compaction_files->push_back(smallest_boundary_file);
+      compaction_files->push_back(smallest_boundary_file); // 需要扩充要压缩的文件
       largest_key = smallest_boundary_file->largest;
     } else {
       continue_searching = false;
@@ -1762,13 +1770,17 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   // 处理 level 层的临界值，
   // 因为随着压缩，同一个 user key 可能处于两个sst
   AddBoundaryInputs(icmp_, current_->files_[level], &c->inputs_[0]);
+
+
+  // 基于level层需要合并的key的范围，选出 level+1 层需要合并的ssgt
   GetRange(c->inputs_[0], &smallest, &largest);
 
-  current_->GetOverlappingInputs(level + 1, &smallest, &largest,
-                                 &c->inputs_[1]);
+  current_->GetOverlappingInputs(level + 1, &smallest, &largest,&c->inputs_[1]);
+
+  // 处理 level+1 层的sst粘接问题
   AddBoundaryInputs(icmp_, current_->files_[level + 1], &c->inputs_[1]);
 
-  // Get entire range covered by compaction
+  // 计算出 level 层与 level+1 层的 key 的范围
   InternalKey all_start, all_limit;
   GetRange2(c->inputs_[0], c->inputs_[1], &all_start, &all_limit);
 
