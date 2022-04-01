@@ -21,6 +21,9 @@
 
 namespace leveldb {
 
+  /****
+   * @return 2 * 1024 * 1024
+   */
 static size_t TargetFileSize(const Options* options) {
   return options->max_file_size;
 }
@@ -39,11 +42,8 @@ static int64_t ExpandedCompactionByteSizeLimit(const Options* options) {
 }
 
 /***
- * 每一个 level 的最大的数据量为 : level * 10M
- *
- * @param options  选项
- * @param level    level 层
- * @return
+ * 返回每个level的最大的字节占用(每个level所有的sst)
+ * 计量 : level * 10M
  */
 static double MaxBytesForLevel(const Options* options, int level) {
 
@@ -57,15 +57,16 @@ static double MaxBytesForLevel(const Options* options, int level) {
   return result;
 }
 
+/****
+ * @return 2 * 1024 * 1024
+ */
 static uint64_t MaxFileSizeForLevel(const Options* options, int level) {
-  // We could vary per level to reduce number of files?
   return TargetFileSize(options);
 }
 
 /***
- * 计算当前version 每一个 Level 层的文件大小
- * @param files 每一个 level 里面的所有文件
- * @return
+ * 计算当前 version 每一个 level 层的所有文件总大小
+ * @param files 每一个level里面的所有文件
  */
 static int64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   int64_t sum = 0;
@@ -75,6 +76,9 @@ static int64_t TotalFileSize(const std::vector<FileMetaData*>& files) {
   return sum;
 }
 
+/*****
+ * 释放当前 version
+ */
 Version::~Version() {
   assert(refs_ == 0);
 
@@ -913,8 +917,7 @@ class VersionSet::Builder {
 
         // 以 base_iter 为游标，找到[base_iter,bpos)之间的数据填充
         // 设置 base_iter = bpos
-        for (std::vector<FileMetaData*>::const_iterator bpos =
-                 std::upper_bound(base_iter, base_end, added_file, cmp);
+        for (std::vector<FileMetaData*>::const_iterator bpos = std::upper_bound(base_iter, base_end, added_file, cmp);
              base_iter != bpos;
              ++base_iter) {
           MaybeAddFile(v, level, *base_iter);
