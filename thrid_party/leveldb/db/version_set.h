@@ -40,7 +40,7 @@ class VersionSet;
 class WritableFile;
 
 /***
- * 对于level>0层的sst，基于Key的定位SST文件
+ * 查询level>0的sst
  * 因为sst是有序的，进行二分查找即可
  * @param icmp
  * @param files
@@ -524,10 +524,9 @@ class VersionSet {
   Version dummy_versions_;              // version 双向链表， 其中pre指向最新的current
   Version* current_;                     // == dummy_versions_.prev_, 指向最新的版本
 
-  // Per-level key at which the next compaction at that level should start.
-  // Either an empty string, or a valid InternalKey.
-  // 记录每一层在下一次需要压缩的largest key
-  // 就是一个偏移， 记录当前压缩位置
+  // 记录每一次压缩的sst的最大的user_key
+  // 用于下一次在基于数据量的压缩过程中，查找对应的level层的所有sst
+  // 比较选择第一个sst.last_user_key > compact_pointer_[level]
   std::string compact_pointer_[config::kNumLevels];
 };
 
@@ -622,12 +621,12 @@ class Compaction {
                                           // input_[0] 为要合并的 level 层的所有sst
                                           // input_[1] 为要合并的 level+1 层的所有sst
 
-  // State used to check for number of overlapping grandparent files
-  // (parent == level_ + 1, grandparent == level_ + 2)
-  std::vector<FileMetaData*> grandparents_;
-  size_t grandparent_index_;  // Index in grandparent_starts_
-  bool seen_key_;             // Some output key has been seen
-  int64_t overlapped_bytes_;  // 输出和祖辈文件之间的重叠字节数
+  std::vector<FileMetaData*> grandparents_;    // 记录level层与level+1层的sst对应的user_key的范围
+                                               // 在level+2层涉及到的sst
+
+  size_t grandparent_index_;                   // grandparents_ 的索引
+  bool seen_key_;                              // Some output key has been seen
+  int64_t overlapped_bytes_;                   // 输出和祖辈文件之间的重叠字节数
 
   // State for implementing IsBaseLevelForKey
 

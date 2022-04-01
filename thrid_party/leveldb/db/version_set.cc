@@ -22,7 +22,7 @@
 namespace leveldb {
 
   /****
-   * @return 2 * 1024 * 1024
+   * @return 2 * 1024 * 1024 : 2M
    */
 static size_t TargetFileSize(const Options* options) {
   return options->max_file_size;
@@ -34,9 +34,10 @@ static int64_t MaxGrandParentOverlapBytes(const Options* options) {
   return 10 * TargetFileSize(options);
 }
 
-// Maximum number of bytes in all compacted files.  We avoid expanding
-// the lower level file set of a compaction if it would make the
-// total compaction cover more than this many bytes.
+/***
+ * 要压缩的level层(包含扩展sst)与要压缩的level+1层的合并数据上限
+ * 上限大小 : 50M
+ */
 static int64_t ExpandedCompactionByteSizeLimit(const Options* options) {
   return 25 * TargetFileSize(options);
 }
@@ -1760,10 +1761,9 @@ void AddBoundaryInputs(const InternalKeyComparator& icmp,
 }
 
 /****
- * 计算 level +1 层需要参与的文件
- *
- * 尽可能选择多个文件进行压缩
- * @param c
+ * 1.处理level层的要合并的sst防止有同一个user_key处于两个sst的边缘问题
+ * 2.处理level+1层防止有同一个user_key处于两个sst的边缘问题 ?? 为什么level+1层会遇到这个问题
+ * 3.扩展level层，让level+1层sst不变的情况下，让更多的level层sst加入到合并中
  */
 void VersionSet::SetupOtherInputs(Compaction* c) {
 
@@ -1776,32 +1776,42 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 
 
   // 基于level层需要合并的key的范围，选出 level+1 层需要合并的ssgt
+  // level+1 层为什么会有边缘key的问题?
   GetRange(c->inputs_[0], &smallest, &largest);
-
   current_->GetOverlappingInputs(level + 1, &smallest, &largest,&c->inputs_[1]);
-
-  // 处理 level+1 层的sst粘接问题
   AddBoundaryInputs(icmp_, current_->files_[level + 1], &c->inputs_[1]);
 
   // 计算出 level 层与 level+1 层的 key 的范围
   InternalKey all_start, all_limit;
   GetRange2(c->inputs_[0], c->inputs_[1], &all_start, &all_limit);
 
-  // See if we can grow the number of inputs in "level" without
-  // changing the number of "level+1" files we pick up.
   if (!c->inputs_[1].empty()) {
     std::vector<FileMetaData*> expanded0;
+    // 基于level层与level+1层的所有合并的sst的user_key的上下限
+    // 重新查找level层的sst，想将更多的sst加入到合并列中
     current_->GetOverlappingInputs(level, &all_start, &all_limit, &expanded0);
+    // 将边缘 user_key 一同处理
     AddBoundaryInputs(icmp_, current_->files_[level], &expanded0);
-    const int64_t inputs0_size = TotalFileSize(c->inputs_[0]);
-    const int64_t inputs1_size = TotalFileSize(c->inputs_[1]);
-    const int64_t expanded0_size = TotalFileSize(expanded0);
-    if (expanded0.size() > c->inputs_[0].size() && inputs1_size + expanded0_size < ExpandedCompactionByteSizeLimit(options_)) {
+
+    const int64_t inputs0_size = TotalFileSize(c->inputs_[0]);  // 拿到level层合并的sst的文件量
+    const int64_t inputs1_size = TotalFileSize(c->inputs_[1]);  // 拿到level+1层合并的sst的文件量
+
+    const int64_t expanded0_size = TotalFileSize(expanded0);         // 拿到level层的扩展sst的文件大小
+
+    if (expanded0.size() > c->inputs_[0].size()  // 表示扩展sst是压缩的level层sst的超集
+        && inputs1_size + expanded0_size < ExpandedCompactionByteSizeLimit(options_)) { // level1+level0扩展的合并数据量少于 50M
+
       InternalKey new_start, new_limit;
+
+      // 获取扩展后的sst的user_key的上下限
       GetRange(expanded0, &new_start, &new_limit);
+
+      // 重新定位涉及到的level+1层的sst
       std::vector<FileMetaData*> expanded1;
       current_->GetOverlappingInputs(level + 1, &new_start, &new_limit, &expanded1);
       AddBoundaryInputs(icmp_, current_->files_[level + 1], &expanded1);
+
+      // 表示扩展的 user_key 并不会改变 level+1层的要合并的sst的数量
       if (expanded1.size() == c->inputs_[1].size()) {
        Log(options_->info_log,
             "Expanding@%d %d+%d (%ld+%ld bytes) to %d+%d (%ld+%ld bytes)\n",
@@ -1811,24 +1821,22 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 
         smallest = new_start;
         largest = new_limit;
-        c->inputs_[0] = expanded0;
+        c->inputs_[0] = expanded0; // 加入扩展
         c->inputs_[1] = expanded1;
         GetRange2(c->inputs_[0], c->inputs_[1], &all_start, &all_limit);
       }
     }
   }
 
-  // Compute the set of grandparent files that overlap this compaction
-  // (parent == level+1; grandparent == level+2)
+  // 将 level+2 层的这个压缩key对应的sst范围加入到 c->grandparents_
   if (level + 2 < config::kNumLevels) {
     current_->GetOverlappingInputs(level + 2, &all_start, &all_limit, &c->grandparents_);
   }
 
-  // Update the place where we will do the next compaction for this level.
-  // We update this immediately instead of waiting for the VersionEdit
-  // to be applied so that if the compaction fails, we will try a different
-  // key range next time.
+
+  // 当前level层记录压缩的last_userkey
   compact_pointer_[level] = largest.Encode().ToString();
+
   c->edit_.SetCompactPointer(level, largest);
 }
 
@@ -1912,7 +1920,6 @@ void Compaction::AddInputDeletions(VersionEdit* edit) {
 
   // 遍历 inputs_
   for (int which = 0; which < 2; which++) {
-
     // 遍历每个 inputs_[which] 下面的所有的sst, 并将他们添加到 deleted_files_ 中
     for (size_t i = 0; i < inputs_[which].size(); i++) {
       edit->RemoveFile(level_ + which, inputs_[which][i]->number);
@@ -1962,11 +1969,13 @@ bool Compaction::ShouldStopBefore(const Slice& internal_key) {
 
   while (grandparent_index_ < grandparents_.size() &&
          icmp->Compare(internal_key,grandparents_[grandparent_index_]->largest.Encode()) > 0) {
+
     if (seen_key_) {
       overlapped_bytes_ += grandparents_[grandparent_index_]->file_size;
     }
     grandparent_index_++;
   }
+
   seen_key_ = true;
 
   if (overlapped_bytes_ > MaxGrandParentOverlapBytes(vset->options_)) {

@@ -114,9 +114,7 @@ class VersionEdit {
 
 
   /****
-   * 存储每一层要压缩的最大的 key
-   * @param level
-   * @param key
+   * 存储当前VersionEdit执行压缩的level与压缩的最大的user_key
    */
   void SetCompactPointer(int level, const InternalKey& key) {
     compact_pointers_.push_back(std::make_pair(level, key));
@@ -175,7 +173,7 @@ class VersionEdit {
   bool has_next_file_number_;
   bool has_last_sequence_;
 
-  std::vector<std::pair<int, InternalKey>> compact_pointers_;   // 每一层所要压缩的最大的 key
+  std::vector<std::pair<int, InternalKey>> compact_pointers_;   // 存储在本次执行的压缩操作对应的level与压缩的最大的key
   DeletedFileSet deleted_files_;                                // 相比上次 version 而言， 本次需要删除的文件有哪些
   std::vector<std::pair<int, FileMetaData>> new_files_;         // 相比于上次 version 而言， 本次新增文件有哪些
 };
