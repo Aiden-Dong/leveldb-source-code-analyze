@@ -103,10 +103,13 @@ Version::~Version() {
 /***
  * 对于level>0层的sst，基于Key的定位SST文件
  * 因为sst是有序的，进行二分查找即可
- * @param icmp
- * @param files
- * @param key
- * @return
+ * 比较 key 与 files->largest
+ *
+ * 返回对于请求的key,最有可能会存储这个key的sst
+ *
+ * @param icmp    比较器
+ * @param files   文件列表
+ * @param key     用于比较的key
  */
 int FindFile(const InternalKeyComparator& icmp, const std::vector<FileMetaData*>& files, const Slice& key) {
   uint32_t left = 0;
@@ -114,6 +117,7 @@ int FindFile(const InternalKeyComparator& icmp, const std::vector<FileMetaData*>
   while (left < right) {
     uint32_t mid = (left + right) / 2;
     const FileMetaData* f = files[mid];
+
     if (icmp.InternalKeyComparator::Compare(f->largest.Encode(), key) < 0) {
       // Key at "mid.largest" is < "target".  Therefore all
       // files at or before "mid" are uninteresting.
@@ -189,55 +193,72 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
   return !BeforeFile(ucmp, largest_user_key, files[index]);
 }
 
-// An internal iterator.  For a given version/level pair, yields
-// information about the files in the level.  For a given entry, key()
-// is the largest key that occurs in the file, and value() is an
-// 16-byte value containing the file number and file size, both
-// encoded using EncodeFixed64.
-
 /***
- * 同一个 level 的 sst 文件遍历器
- * 用于 同一 level 下的 sst 二级遍历
+ * 遍历当前level的sst信息
+ * key:file->largest
+ * value:{file->number+file->file_size}
  */
 class Version::LevelFileNumIterator : public Iterator {
- public:
-  LevelFileNumIterator(const InternalKeyComparator& icmp, const std::vector<FileMetaData*>* flist)
-      : icmp_(icmp), flist_(flist), index_(flist->size()) {  // Marks as invalid
+
+public:
+
+  LevelFileNumIterator(const InternalKeyComparator& icmp,
+                       const std::vector<FileMetaData*>* flist)
+      : icmp_(icmp),
+        flist_(flist),
+        index_(flist->size()) {  // 标志为无效
   }
 
   bool Valid() const override { return index_ < flist_->size(); }
+
+  // 对于指定key， 返回最有可能的sst
   void Seek(const Slice& target) override {
     index_ = FindFile(icmp_, *flist_, target);
   }
+
+  // 将游标移动到首位
   void SeekToFirst() override { index_ = 0; }
+
+  // 将游标移动到结尾
   void SeekToLast() override {
     index_ = flist_->empty() ? 0 : flist_->size() - 1;
   }
+
+  // 定位到下一个游标位置
   void Next() override {
     assert(Valid());
     index_++;
   }
+
+  // 定位到上一个游标位置
   void Prev() override {
     assert(Valid());
     if (index_ == 0) {
-      index_ = flist_->size();  // Marks as invalid
+      index_ = flist_->size();  // 标志为无效
     } else {
       index_--;
     }
   }
+  // 放回指定sst的largest
   Slice key() const override {
     assert(Valid());
     return (*flist_)[index_]->largest.Encode();
   }
+
+  // 返回当前sst的信息{file->number}+{file->file_size}
   Slice value() const override {
+
     assert(Valid());
+
     EncodeFixed64(value_buf_, (*flist_)[index_]->number);
     EncodeFixed64(value_buf_ + 8, (*flist_)[index_]->file_size);
+
     return Slice(value_buf_, sizeof(value_buf_));
   }
   Status status() const override { return Status::OK(); }
 
  private:
+
   const InternalKeyComparator icmp_;                  // key 比较器
   const std::vector<FileMetaData*>* const flist_;     // 同一个 level 层的数据遍历
   uint32_t index_;                                    // 当前定位的 sst 文件索引
@@ -1573,7 +1594,10 @@ Iterator* VersionSet::MakeInputIterator(Compaction* c) {
         }
       } else {
         // Create concatenating iterator for the files from this level
-        list[num++] = NewTwoLevelIterator(new Version::LevelFileNumIterator(icmp_, &c->inputs_[which]),&GetFileIterator, table_cache_, options);
+        list[num++] = NewTwoLevelIterator(new Version::LevelFileNumIterator(icmp_, &c->inputs_[which]),
+                                          &GetFileIterator,
+                                          table_cache_,
+                                          options);
       }
     }
   }
@@ -1911,8 +1935,10 @@ Compaction::~Compaction() {
 }
 
 /****
- * 是否只是简单移动文件
- * 如果 inputs_[1]中没有文件， inputs_[0] 中只有一个文件
+ * 表示本次是否可以将本次SST直接移动到上一层
+ *
+ * level层只有一个文件
+ * level层与level+1层没有重叠
  * 同时 grandparents_ 中有交集的文件总size小于配置值，
  * 这是为了避免创建的单个level+1文件后续 merge 到 level+2 时的高开销
  */
@@ -1921,14 +1947,18 @@ bool Compaction::IsTrivialMove() const {
   // 获取当前的 VersionSet
   const VersionSet* vset = input_version_->vset_;
 
-
-  return (num_input_files(0) == 1 && num_input_files(1) == 0 &&
+  // level层只有一个文件
+  // level和level+1层文件没有重叠
+  // level层与grandparents重叠度小于阈值(避免后面到level+1层时候与level+2)重叠度太大
+  return (num_input_files(0) == 1 &&
+          num_input_files(1) == 0 &&
           TotalFileSize(grandparents_) <= MaxGrandParentOverlapBytes(vset->options_));
 }
 
 
 /****
- * 所有参与compaction的level层与level+1层文件都记录到edit->delete_files,以便后续删除
+ * 将要删除的文件添加到VersionEdit
+ * 因为input经过变化生成output， 因此input对应deleted_file, output对应added_file
  */
 void Compaction::AddInputDeletions(VersionEdit* edit) {
 

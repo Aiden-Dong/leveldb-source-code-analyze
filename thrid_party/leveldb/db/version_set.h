@@ -540,6 +540,9 @@ class VersionSet {
  *
  *   根据一些依据来选择某个 level 比如level-n，将 level-n 中的文件与 level-(n+1) 的文件进行合并，避免 level-n 中文件过多，
  *   同时在这个过程中删除掉过期的kv以及被用户删除的kv。
+ *
+ *   minor compaction : 将 immtable dump 到 SSTable
+ *   major compaction : level 直接的 SSTable compaction
  */
 class Compaction {
  public:
@@ -570,35 +573,44 @@ class Compaction {
 
 
   /****
-   * 返回当前合并最大生成的文件的数量
+   * 返回当前合并最大生成的文件的大小{option-max_file_size}
    */
   uint64_t MaxOutputFileSize() const { return max_output_file_size_; }
 
   /****
-   * 是否只是简单移动文件
-   * 如果 inputs_[1]中没有文件， inputs_[0] 中只有一个文件
+   * 表示本次是否可以将本次SST直接移动到上一层
+   *
+   * level层只有一个文件
+   * level层与level+1层没有重叠
    * 同时 grandparents_ 中有交集的文件总size小于配置值，
    * 这是为了避免创建的单个level+1文件后续 merge 到 level+2 时的高开销
    */
   bool IsTrivialMove() const;
 
   /****
-   * 所有参与compaction的level层与level+1层文件都记录到edit->delete_files,以便后续删除
+   * 将要删除的文件添加到VersionEdit
+   * 对应inputs_[0], inputs_[1] 所有sst
+   * 因为input经过变化生成output， 因此input对应deleted_file, output对应added_file
    */
   void AddInputDeletions(VersionEdit* edit);
 
   /****
-   * 如果 user_key 在大于level+1(level+2, level+3, ...) 的 level 中并不存在的所有sst 的key的范围则返回true
-   * 则返回false
+   * 用于判断对应的user_key是否在>=level+2层所有的sst范围内
+   * 如果存在则返回false, 不存在返回true
+   *
+   * 主要用于key的type=deletion时可不可以将该key删除掉
    */
   bool IsBaseLevelForKey(const Slice& user_key);
 
-  // Returns true iff we should stop building the current output
-  // before processing "internal_key".
+
+  /****
+   * 为了避免合并到Level+1层之后与level+2层重叠太多，导致下次合并level+1时候时间太久
+   * 因此要及时停止输出，并生成新的sst
+   *
+   */
   bool ShouldStopBefore(const Slice& internal_key);
 
-  // Release the input version for the compaction, once the compaction
-  // is successful.
+  // 当前操作成功后，释放当前版本
   void ReleaseInputs();
 
  private:
@@ -609,11 +621,11 @@ class Compaction {
   Compaction(const Options* options, int level);
 
 
-  // 要合并的 level, 在数据合并时，
-  // 要将 level 层与 level+1 层进行合并
+  // 要合并的 level, 在数据合并时, 要将 level 层与 level+1 层进行合并
   int level_;
 
-  uint64_t max_output_file_size_;         // 合并的新文件的阈值大小
+  uint64_t max_output_file_size_;         // 压缩后形成的文件大小上限{option->max_file_size}
+
   Version* input_version_;                // 当前操作的版本
   VersionEdit edit_;                      // 当前版本的操作记录
 
@@ -624,8 +636,10 @@ class Compaction {
   std::vector<FileMetaData*> grandparents_;    // 记录level层与level+1层的sst对应的user_key的范围
                                                // 在level+2层涉及到的sst
 
-  size_t grandparent_index_;                   // grandparents_ 的索引
-  bool seen_key_;                              // Some output key has been seen
+  size_t grandparent_index_;                   // grandparents_ 的索引(数组大小)
+
+  bool seen_key_;                              // 当前压缩与grandparent files 重叠字节数
+
   int64_t overlapped_bytes_;                   // 输出和祖辈文件之间的重叠字节数
 
   // State for implementing IsBaseLevelForKey
