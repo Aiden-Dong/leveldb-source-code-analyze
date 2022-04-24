@@ -1842,12 +1842,19 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 
 /****
  * 用于手动触发压缩
+ *
+ * @param level 设置用于压缩的level
+ * @param begin 用于压缩的起始的 key
+ * @param end 用于压缩的结束的 key
  */
 Compaction* VersionSet::CompactRange(int level,
                                      const InternalKey* begin,
                                      const InternalKey* end) {
+
+  // 基于要压缩的level与key的范围定位到sst
   std::vector<FileMetaData*> inputs;
   current_->GetOverlappingInputs(level, begin, end, &inputs);
+
   if (inputs.empty()) {
     return nullptr;
   }
@@ -1856,12 +1863,17 @@ Compaction* VersionSet::CompactRange(int level,
   // 所以在 level+1 层，我们将合并的文件字节数不能太大
   // 但是针对第0层我们不会处理，因为第0层文件之间允许它重复，所以会选择很多个
   if (level > 0) {
+
+    // limit == 2M
     const uint64_t limit = MaxFileSizeForLevel(options_, level);  // 计算最大的文件限制
 
     uint64_t total = 0;
 
+    // 限制压缩的文件大小，总数不能超过2m
     for (size_t i = 0; i < inputs.size(); i++) {
+
       uint64_t s = inputs[i]->file_size;
+
       total += s;
       if (total >= limit) {
         inputs.resize(i + 1);
@@ -1874,6 +1886,8 @@ Compaction* VersionSet::CompactRange(int level,
   c->input_version_ = current_;
   c->input_version_->Ref();
   c->inputs_[0] = inputs;
+
+  // 设置 inputs_[1] 的压缩sst
   SetupOtherInputs(c);
   return c;
 }
