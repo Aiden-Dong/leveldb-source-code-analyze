@@ -1330,29 +1330,31 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 // REQUIRES: this thread is currently at the front of the writer queue
 Status DBImpl::MakeRoomForWrite(bool force) {
   mutex_.AssertHeld();
+
   assert(!writers_.empty());
+
+  // 是否允许延迟
   bool allow_delay = !force;
   Status s;
+
   while (true) {
+    // 如果有错误，则直接推出
     if (!bg_error_.ok()) {
-      // Yield previous error
       s = bg_error_;
       break;
-    } else if (allow_delay && versions_->NumLevelFiles(0) >=
-                                  config::kL0_SlowdownWritesTrigger) {
-      // We are getting close to hitting a hard limit on the number of
-      // L0 files.  Rather than delaying a single write by several
-      // seconds when we hit the hard limit, start delaying each
-      // individual write by 1ms to reduce latency variance.  Also,
-      // this delay hands over some CPU to the compaction thread in
-      // case it is sharing the same core as the writer.
+
+    } else if (allow_delay && versions_->NumLevelFiles(0) >= config::kL0_SlowdownWritesTrigger) {
+      // 当我们允许延迟，并且 sst 第0层文件数量超过阈值时，
+      // 我们将延迟1ms时间单位
+      // 此外，这种延迟会将一些CPU移交给压缩线程，以防它与写入程序共享同一个内核。
+      // 只能等1次
       mutex_.Unlock();
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
       mutex_.Lock();
-    } else if (!force &&
-               (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
-      // There is room in current memtable
+    } else if (!force && (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
+      // 表示如果允许延迟，并且 memtable 使用的内存没有超过限制
+      // 则退出
       break;
     } else if (imm_ != nullptr) {
       // We have filled up the current memtable, but the previous

@@ -29,7 +29,7 @@ static const int kNumLevels = 7;
 // 第 0 层是 sstable 到达这个阈值时触发的压缩， 默认是4
 static const int kL0_CompactionTrigger = 4;
 
-// 第 0 层是sstable 到达这个阈值时，延迟写入1ms, 将cpu尽可能的移交给压缩线程
+// 第0层sst文件数量上限
 static const int kL0_SlowdownWritesTrigger = 8;
 
 // 第 0 层 sstable 到达这个阈值时将会停止写，等到压缩结束

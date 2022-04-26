@@ -53,7 +53,7 @@ struct LEVELDB_EXPORT Options {
   Logger* info_log = nullptr;
 
 
-  // mmetable 的大小， 默认 4M
+  // mmetable的缓存区大小 默认 4M
   // 值大有利于性能提升
   // 但是内存可能会存在两份， 太大需要注意oom
   // 过大刷盘后，不利于数据恢复

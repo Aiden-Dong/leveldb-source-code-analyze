@@ -85,9 +85,11 @@ class DBImpl : public DB {
     InternalKey tmp_storage;   // Used to keep track of compaction progress
   };
 
-  // Per level compaction stats.  stats_[level] stores the stats for
-  // compactions that produced data for the specified "level".
+  /***
+   * 记录压缩过程中的 metric
+   */
   struct CompactionStats {
+
     CompactionStats() : micros(0), bytes_read(0), bytes_written(0) {}
 
     void Add(const CompactionStats& c) {
@@ -137,8 +139,21 @@ class DBImpl : public DB {
   Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
-  Status MakeRoomForWrite(bool force /* compact even if there is room? */)
-      EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+  /******
+   *
+   * 1. 有错误的话，直接推出
+   * 2. 如果允许延迟，而且文件个数没有超过硬限制，那么可以等1s, 但是只能等一次
+   * 3. 如果不能延迟，而且mem又有充足的空间，那么也不需要进行处理，直接退出循环
+   * 4. 如果已经有一个minor压缩压缩线程了，此时不能在启动一个
+   * 5. 如果第0层文件超过了硬限制，此时需要停止写了。等待被唤醒
+   * 6. 否则就需要创建新的mem,开始 minor 压缩， 调用 @{MaybeScheduleCompaction}
+   *
+   * @param force 是否强制写
+   *            if force==true : 不允许延迟
+   *            else : 允许延迟
+   */
+  Status MakeRoomForWrite(bool force) EXCLUSIVE_LOCKS_REQUIRED(mutex_);
+
   WriteBatch* BuildBatchGroup(Writer** last_writer)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
@@ -198,19 +213,18 @@ class DBImpl : public DB {
 
   SnapshotList snapshots_ GUARDED_BY(mutex_);                    // 快照, leveldb 支持从某个快照读取数据
 
-  std::set<uint64_t> pending_outputs_ GUARDED_BY(mutex_);
+  std::set<uint64_t> pending_outputs_ GUARDED_BY(mutex_);        //  保护某些sst文件不被删除， 主要在CompactMemTable中
 
-  // Has a background compaction been scheduled or is running?
-  bool background_compaction_scheduled_ GUARDED_BY(mutex_);
+  bool background_compaction_scheduled_ GUARDED_BY(mutex_);      // 表示后台压缩线程是否已经被调度或者在运行
 
-  ManualCompaction* manual_compaction_ GUARDED_BY(mutex_);
+  ManualCompaction* manual_compaction_ GUARDED_BY(mutex_);       // 手动压缩句柄
 
-  VersionSet* const versions_ GUARDED_BY(mutex_);
+  VersionSet* const versions_ GUARDED_BY(mutex_);                // 版本管理
 
   // Have we encountered a background error in paranoid mode?
   Status bg_error_ GUARDED_BY(mutex_);
 
-  CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);
+  CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);  //记录压缩状态信息，用于打印
 };
 
 // Sanitize db options.  The caller should delete result.info_log if
