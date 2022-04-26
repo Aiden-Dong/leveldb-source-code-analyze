@@ -334,7 +334,7 @@ class VersionSet {
   uint64_t NewFileNumber() { return next_file_number_++; }
 
   /*****
-   * 重用fileNum, 比如 manifest
+   * 当创建日志文件失败时，文件编号重新设置为上一个编号
    */
   void ReuseFileNumber(uint64_t file_number) {
     if (next_file_number_ == file_number + 1) {

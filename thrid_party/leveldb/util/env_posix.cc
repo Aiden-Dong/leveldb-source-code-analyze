@@ -406,7 +406,7 @@ class PosixWritableFile final : public WritableFile {
 #if HAVE_FDATASYNC
     bool sync_success = ::fdatasync(fd) == 0;
 #else  // linux
-    bool sync_success = ::fsync(fd) == 0;
+    bool sync_success = NewWritableFile== 0;
 #endif  // HAVE_FDATASYNC
 
     if (sync_success) {

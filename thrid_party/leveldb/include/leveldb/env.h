@@ -191,14 +191,16 @@ class LEVELDB_EXPORT WritableFile {
 
   virtual ~WritableFile();
 
-  // 追加写操作
+  // 数据追加到内存缓冲区
   virtual Status Append(const Slice& data) = 0;
 
   // 关闭文件操作
   virtual Status Close() = 0;
+
   // 数据刷盘
   virtual Status Flush() = 0;
 
+  // 从系统的写缓冲区落盘 : ::fsync(fd)
   virtual Status Sync() = 0;
 };
 

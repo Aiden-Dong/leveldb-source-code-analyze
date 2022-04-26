@@ -1344,10 +1344,11 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       break;
 
     } else if (allow_delay && versions_->NumLevelFiles(0) >= config::kL0_SlowdownWritesTrigger) {
-      // 当我们允许延迟，并且 sst 第0层文件数量超过阈值时，
+      // 当我们允许延迟，并且sst第0层文件数量超过软限制，
       // 我们将延迟1ms时间单位
       // 此外，这种延迟会将一些CPU移交给压缩线程，以防它与写入程序共享同一个内核。
       // 只能等1次
+
       mutex_.Unlock();
       env_->SleepForMicroseconds(1000);
       allow_delay = false;  // Do not delay a single write more than once
@@ -1355,35 +1356,44 @@ Status DBImpl::MakeRoomForWrite(bool force) {
     } else if (!force && (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
       // 表示如果允许延迟，并且 memtable 使用的内存没有超过限制
       // 则退出
+
       break;
     } else if (imm_ != nullptr) {
-      // We have filled up the current memtable, but the previous
-      // one is still being compacted, so we wait.
+      // 如果已经有一个monior压缩的线程了，此时就不能在启用一个了
+      // 需要等待上一个结束
+
       Log(options_.info_log, "Current memtable full; waiting...\n");
       background_work_finished_signal_.Wait();
     } else if (versions_->NumLevelFiles(0) >= config::kL0_StopWritesTrigger) {
-      // There are too many level-0 files.
+      // 如果SST超过了硬限制， 此时不能在写入， 需要等待压缩
+
       Log(options_.info_log, "Too many L0 files; waiting...\n");
       background_work_finished_signal_.Wait();
     } else {
-      // Attempt to switch to a new memtable and trigger compaction of old
+
       assert(versions_->PrevLogNumber() == 0);
-      uint64_t new_log_number = versions_->NewFileNumber();
-      WritableFile* lfile = nullptr;
-      s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);
+
+      uint64_t new_log_number = versions_->NewFileNumber();                            // 拿到新的日志编号， 当前verionset 日志编号+1
+      WritableFile* lfile = nullptr;                                                   // {new_log_number}.log 操作句柄
+      s = env_->NewWritableFile(LogFileName(dbname_, new_log_number), &lfile);  // 创建日志文件 {new_log_number}.log
+
       if (!s.ok()) {
-        // Avoid chewing through file number space in a tight loop.
+        // 创建日志文件失败时， versionset 日志编号回滚
         versions_->ReuseFileNumber(new_log_number);
         break;
       }
+
       delete log_;
       delete logfile_;
-      logfile_ = lfile;
-      logfile_number_ = new_log_number;
-      log_ = new log::Writer(lfile);
-      imm_ = mem_;
-      has_imm_.store(true, std::memory_order_release);
-      mem_ = new MemTable(internal_comparator_);
+
+      logfile_ = lfile;                     // 设置指向最新的日志句柄
+      logfile_number_ = new_log_number;     // 日志文件设置
+      log_ = new log::Writer(lfile);        // WAL 操作句柄
+
+      imm_ = mem_;                          // 将当前的 MemTable -> IMemTable 用于刷盘
+      has_imm_.store(true, std::memory_order_release); // imm 状态设置存在刷盘文件
+
+      mem_ = new MemTable(internal_comparator_);  // 重新构建一个 MemTable 用于用户数据写入
       mem_->Ref();
       force = false;  // Do not force another compaction if have room
       MaybeScheduleCompaction();

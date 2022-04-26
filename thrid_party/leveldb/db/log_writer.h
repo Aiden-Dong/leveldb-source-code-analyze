@@ -17,6 +17,11 @@ class WritableFile;
 
 namespace log {
 
+
+ /***
+  * WAL 操作句柄，在数据结构上将数据拆分成Block的方式，
+  * 内部使用WritableFile追加写文件
+  */
 class Writer {
  public:
   // Create a writer that will append data to "*dest".
