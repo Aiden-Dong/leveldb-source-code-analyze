@@ -21,6 +21,15 @@
 
 namespace leveldb {
 
+/****
+ * 迭代器工具
+ *
+ * 派生类 :
+ *       - LevelFileNumIterator  SST 文件遍历器
+ *       - TwoLevelIterator      SST 遍历器
+ *       - Iter                  Block 遍历器
+ *       - MergingIterator       合并SST迭代器
+ */
 class LEVELDB_EXPORT Iterator {
  public:
   Iterator();
@@ -30,53 +39,57 @@ class LEVELDB_EXPORT Iterator {
 
   virtual ~Iterator();
 
-  // An iterator is either positioned at a key/value pair, or
-  // not valid.  This method returns true iff the iterator is valid.
+  /***
+   * 当前是否有有效的key
+   */
   virtual bool Valid() const = 0;
 
-  // Position at the first key in the source.  The iterator is Valid()
-  // after this call iff the source is not empty.
+  /***
+   * 移动游标到最开始位置
+   * key_value 指向最开始的 kv
+   */
   virtual void SeekToFirst() = 0;
 
-  // Position at the last key in the source.  The iterator is
-  // Valid() after this call iff the source is not empty.
+  /***
+   * 移动游标到最后位置
+   * key_value 指向最后的 kv
+   */
   virtual void SeekToLast() = 0;
 
-  // Position at the first key in the source that is at or past target.
-  // The iterator is Valid() after this call iff the source contains
-  // an entry that comes at or past target.
+
+  /***
+   * 查找第一个key >= target 的数据
+   */
   virtual void Seek(const Slice& target) = 0;
 
-  // Moves to the next entry in the source.  After this call, Valid() is
-  // true iff the iterator was not positioned at the last entry in the source.
-  // REQUIRES: Valid()
+  /***
+   * 找到下一个key,value目标
+   */
   virtual void Next() = 0;
 
-  // Moves to the previous entry in the source.  After this call, Valid() is
-  // true iff the iterator was not positioned at the first entry in source.
-  // REQUIRES: Valid()
+  /***
+   * 找到上一个 key, value 目标
+   */
   virtual void Prev() = 0;
 
-  // Return the key for the current entry.  The underlying storage for
-  // the returned slice is valid only until the next modification of
-  // the iterator.
-  // REQUIRES: Valid()
+  /***
+   * 找到当前游标位置的 key
+   */
   virtual Slice key() const = 0;
 
-  // Return the value for the current entry.  The underlying storage for
-  // the returned slice is valid only until the next modification of
-  // the iterator.
-  // REQUIRES: Valid()
+  /***
+   * 找到当前游标位置的 value
+   */
   virtual Slice value() const = 0;
 
-  // If an error has occurred, return it.  Else return an ok status.
+  /***
+   * 当前迭代器的操作状态
+   */
   virtual Status status() const = 0;
 
-  // Clients are allowed to register function/arg1/arg2 triples that
-  // will be invoked when this iterator is destroyed.
-  //
-  // Note that unlike all of the preceding methods, this method is
-  // not abstract and therefore clients should not override it.
+  /***
+   * 当前迭代器的清理函数
+   */
   using CleanupFunction = void (*)(void* arg1, void* arg2);
   void RegisterCleanup(CleanupFunction function, void* arg1, void* arg2);
 

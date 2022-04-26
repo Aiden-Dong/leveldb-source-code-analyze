@@ -34,14 +34,20 @@ void test_mem_align();
 void test_bytes();
 
 
+// 测试二分查找法
+void test_search();
+
+
 int main(int argc, char*argv[]){
 
-  std::string a1("a");
-  std::string a2("b");
+//  std::string a1("a");
+//  std::string a2("b");
+//
+//  std::cout << std::memcmp(a1.c_str(), a2.c_str(), 1) << std::endl;
+//
+//  std::cout << a1.compare(a2) <<std::endl;
 
-  std::cout << std::memcmp(a1.c_str(), a2.c_str(), 1) << std::endl;
-
-  std::cout << a1.compare(a2) <<std::endl;
+test_search();
 
   return 0;
 }
@@ -154,12 +160,27 @@ void test_bytes(){
 
   uint64_t *p(reinterpret_cast<uint64_t *>(arr));
 
-
-
   std::cout << std::hex << *p << std::endl;
   // 输出 : 01 00 00 00 00 00 00 00
 
   std::cout << std::endl;
+}
 
+void test_search(){
+  u_int16_t arr[10] = {1, 3, 7, 8 , 10, 12, 14, 15, 16, 19};
 
+  u_int16_t search_var = 13;
+
+  u_int16_t v_left = 0;
+  u_int16_t v_right = 9;
+  u_int16_t v_middle = 0;
+
+  while (v_left < v_right){
+    v_middle = (v_left  + v_right) / 2;
+
+    if(arr[v_middle] < search_var) v_left = v_middle + 1;
+    else v_right = v_middle;
+  }
+
+  std::cout << std::dec << arr[v_right] << std::endl;
 }

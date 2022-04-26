@@ -120,6 +120,7 @@ Iterator* TableCache::NewIterator(const ReadOptions& options, uint64_t file_numb
 
   Cache::Handle* handle = nullptr;
   Status s = FindTable(file_number, file_size, &handle);  // 读取一个 sst
+
   if (!s.ok()) {
     return NewErrorIterator(s);
   }

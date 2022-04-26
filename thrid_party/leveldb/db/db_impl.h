@@ -163,40 +163,41 @@ class DBImpl : public DB {
   }
 
   // Constant after construction
-  Env* const env_;
-  const InternalKeyComparator internal_comparator_;
-  const InternalFilterPolicy internal_filter_policy_;
-  const Options options_;  // options_.comparator == &internal_comparator_
-  const bool owns_info_log_;
-  const bool owns_cache_;
-  const std::string dbname_;
+  Env* const env_;                                              // 系统环境接口
+  const InternalKeyComparator internal_comparator_;             // InternalKey 比较器
+  const InternalFilterPolicy internal_filter_policy_;           // InternalKey 过滤策略
+  const Options options_;                                       // 系统选项
+  const bool owns_info_log_;                                    // 表示是否启用了info_log打印日志
+  const bool owns_cache_;                                       // 表示是否启用了 block 缓存
+  const std::string dbname_;                                    // 数据库名称
 
-  // table_cache_ provides its own synchronization
-  TableCache* const table_cache_;
+  TableCache* const table_cache_;                               // 基于缓存的数据查询接口
 
-  // Lock over the persistent DB state.  Non-null iff successfully acquired.
-  FileLock* db_lock_;
+  FileLock* db_lock_;                                           // 文件锁
 
-  // State below is protected by mutex_
-  port::Mutex mutex_;
-  std::atomic<bool> shutting_down_;
+  port::Mutex mutex_;                                            // 互斥锁
+  std::atomic<bool> shutting_down_;                              // 表示db是否关闭
   port::CondVar background_work_finished_signal_ GUARDED_BY(mutex_);
-  MemTable* mem_;
-  MemTable* imm_ GUARDED_BY(mutex_);  // Memtable being compacted
-  std::atomic<bool> has_imm_;         // So bg thread can detect non-null imm_
-  WritableFile* logfile_;
-  uint64_t logfile_number_ GUARDED_BY(mutex_);
-  log::Writer* log_;
-  uint32_t seed_ GUARDED_BY(mutex_);  // For sampling.
+
+  MemTable* mem_;                                                // 活跃的 memtab
+  MemTable* imm_ GUARDED_BY(mutex_);                             // 要被压缩的 memtab
+
+  std::atomic<bool> has_imm_;                                    // 表示是否已经有一个 imm_, 因为只有一个线程在压缩， 所以只有一个 imm_
+
+  WritableFile* logfile_;                                        // WAL 句柄
+  uint64_t logfile_number_ GUARDED_BY(mutex_);                   // 当前日志编号
+
+  log::Writer* log_;                                             //
+
+  uint32_t seed_ GUARDED_BY(mutex_);                             // 用于采样
 
   // Queue of writers.
-  std::deque<Writer*> writers_ GUARDED_BY(mutex_);
+  std::deque<Writer*> writers_ GUARDED_BY(mutex_);               // 用于批量写
+
   WriteBatch* tmp_batch_ GUARDED_BY(mutex_);
 
-  SnapshotList snapshots_ GUARDED_BY(mutex_);
+  SnapshotList snapshots_ GUARDED_BY(mutex_);                    // 快照, leveldb 支持从某个快照读取数据
 
-  // Set of table files to protect from deletion because they are
-  // part of ongoing compactions.
   std::set<uint64_t> pending_outputs_ GUARDED_BY(mutex_);
 
   // Has a background compaction been scheduled or is running?
