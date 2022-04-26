@@ -47,7 +47,10 @@ int main(int argc, char*argv[]){
 //
 //  std::cout << a1.compare(a2) <<std::endl;
 
-test_search();
+  leveldb::Slice a("a");
+  leveldb::Slice b("b");
+
+  std::cout << a.compare(b) <<std::endl;
 
   return 0;
 }
@@ -170,6 +173,7 @@ void test_search(){
   u_int16_t arr[10] = {1, 3, 7, 8 , 10, 12, 14, 15, 16, 19};
 
   u_int16_t search_var = 13;
+
 
   u_int16_t v_left = 0;
   u_int16_t v_right = 9;

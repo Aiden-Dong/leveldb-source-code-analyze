@@ -17,14 +17,21 @@ class Iterator;
 class TableCache;
 class VersionEdit;
 
-// Build a Table file from the contents of *iter.  The generated file
-// will be named according to meta->number.  On success, the rest of
-// *meta will be filled with metadata about the generated table.
-// If no data is present in *iter, meta->file_size will be set to
-// zero, and no Table file will be produced.
+/****
+ * 将 IMemTable 数据刷写到磁盘形成SST, 此过程在MemTable缓冲区到达上限数据落地时触发
+ * 过程调用TableBuilder建立SST
+ * SST 落地在level0
+ *
+ * @param dbname        数据库名称
+ * @param env           系统相关操作句柄
+ * @param options       配置选项
+ * @param table_cache   SST读取接口
+ * @param iter          MemTable 迭代器
+ * @param meta          用于存储SST文件元信息
+ */
 Status BuildTable(const std::string& dbname, Env* env, const Options& options,
                   TableCache* table_cache, Iterator* iter, FileMetaData* meta);
 
-}  // namespace leveldb
+}
 
 #endif  // STORAGE_LEVELDB_DB_BUILDER_H_

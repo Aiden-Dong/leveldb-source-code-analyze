@@ -14,6 +14,19 @@
 
 namespace leveldb {
 
+
+/****
+ * 将 IMemTable 数据刷写到磁盘形成SST, 此过程在MemTable缓冲区到达上限数据落地时触发
+ * 过程调用TableBuilder建立SST
+ * SST 落地在level0
+ *
+ * @param dbname        数据库名称
+ * @param env           系统相关操作句柄
+ * @param options       配置选项
+ * @param table_cache   SST读取接口
+ * @param iter          MemTable 迭代器
+ * @param meta          用于存储SST文件元信息
+ */
 Status BuildTable(const std::string& dbname,
                   Env* env,
                   const Options& options,
@@ -60,10 +73,12 @@ Status BuildTable(const std::string& dbname,
     }
     delete builder;
 
-    // Finish and check for file errors
+    // 数据从磁盘缓冲区刷写到磁盘
     if (s.ok()) {
       s = file->Sync();
     }
+
+    // 关闭文件句柄
     if (s.ok()) {
       s = file->Close();
     }
@@ -71,9 +86,9 @@ Status BuildTable(const std::string& dbname,
     file = nullptr;
 
     if (s.ok()) {
-      // Verify that the table is usable
-      Iterator* it = table_cache->NewIterator(ReadOptions(), meta->number,
-                                              meta->file_size);
+      // 校验表是否可用
+      // 同时这个操作将SST加入了缓冲区
+      Iterator* it = table_cache->NewIterator(ReadOptions(), meta->number, meta->file_size);
       s = it->status();
       delete it;
     }

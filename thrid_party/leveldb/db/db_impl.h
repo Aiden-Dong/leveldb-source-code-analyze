@@ -130,11 +130,11 @@ class DBImpl : public DB {
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
 
   /***
-   * 将 MemTable 的内容写入 SST
-   * @param mem  memtable
-   * @param edit
-   * @param base
-   * @return
+   * IMemTable写到level0层sst
+   *
+   * @param mem  要被刷盘的 SST
+   * @param edit 用于记录基于当前版本的变更项
+   * @param base 当前版本链接
    */
   Status WriteLevel0Table(MemTable* mem, VersionEdit* edit, Version* base)
       EXCLUSIVE_LOCKS_REQUIRED(mutex_);
@@ -223,7 +223,7 @@ class DBImpl : public DB {
   // Have we encountered a background error in paranoid mode?
   Status bg_error_ GUARDED_BY(mutex_);
 
-  CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);  //记录压缩状态信息，用于打印
+  CompactionStats stats_[config::kNumLevels] GUARDED_BY(mutex_);  // 用于记录每次压缩的耗时与文件量等信息
 };
 
 // Sanitize db options.  The caller should delete result.info_log if

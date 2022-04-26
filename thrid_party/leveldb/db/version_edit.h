@@ -120,7 +120,15 @@ class VersionEdit {
     compact_pointers_.push_back(std::make_pair(level, key));
   }
 
-  // 添加一个新增文件到 version 中
+  /***
+   * 将一个新的SST添加到version中
+   *
+   * @param level          SST 要添加到的level
+   * @param file           SST 文件编号
+   * @param file_size      SST 文件编码
+   * @param smallest       SST 文件最小key
+   * @param largest        SST 文件最大key
+   */
   void AddFile(int level,
                uint64_t file,
                uint64_t file_size,

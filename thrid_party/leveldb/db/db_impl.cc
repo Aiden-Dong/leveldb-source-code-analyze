@@ -490,8 +490,8 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
     }
   }
 
+  // 进行MemTable 刷盘操作
   if (mem != nullptr) {
-    // mem did not get reused; compact it.
     if (status.ok()) {
       *save_manifest = true;
       status = WriteLevel0Table(mem, edit, nullptr);
@@ -528,29 +528,39 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   Status s;
   {
     mutex_.Unlock();
+    // MemTable 数据落盘， 落盘过程中解锁， 提高系统效率
     s = BuildTable(dbname_, env_, options_, table_cache_, iter, &meta);
     mutex_.Lock();
   }
 
+  // 记录落地消息
   Log(options_.info_log, "Level-0 table #%llu: %lld bytes %s",
-      (unsigned long long)meta.number, (unsigned long long)meta.file_size,
-      s.ToString().c_str());
+      (unsigned long long)meta.number, (unsigned long long)meta.file_size, s.ToString().c_str());
+
+  // 释放这个迭代器
   delete iter;
+
+  // 从 Pending_outputs 中移出
   pending_outputs_.erase(meta.number);
 
   // Note that if file_size is zero, the file has been deleted and
   // should not be added to the manifest.
   int level = 0;
+
   if (s.ok() && meta.file_size > 0) {
     const Slice min_user_key = meta.smallest.user_key();
     const Slice max_user_key = meta.largest.user_key();
+
     if (base != nullptr) {
+      // 判断 SST 落地到第几层合适
       level = base->PickLevelForMemTableOutput(min_user_key, max_user_key);
     }
-    edit->AddFile(level, meta.number, meta.file_size, meta.smallest,
-                  meta.largest);
+
+    // 在 VersionEdit 中添加该SST到指定的level中
+    edit->AddFile(level, meta.number, meta.file_size, meta.smallest, meta.largest);
   }
 
+  // 记录写的耗时与文件大小
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros;
   stats.bytes_written = meta.file_size;
@@ -568,7 +578,8 @@ void DBImpl::CompactMemTable() {
   Version* base = versions_->current();  // 获得当前的版本
   base->Ref();
 
-  Status s = WriteLevel0Table(imm_, &edit, base);
+
+  Status s = WriteLevel0Table(imm_, &edit, base);  // 对 IMemTable 进行刷盘操作
   base->Unref();
 
   if (s.ok() && shutting_down_.load(std::memory_order_acquire)) {
@@ -578,16 +589,17 @@ void DBImpl::CompactMemTable() {
   // Replace immutable memtable with the generated Table
   if (s.ok()) {
     edit.SetPrevLogNumber(0);
-    edit.SetLogNumber(logfile_number_);  // Earlier logs no longer needed
-    s = versions_->LogAndApply(&edit, &mutex_);
+    edit.SetLogNumber(logfile_number_);         // 设置当前的WAL日志编号
+    s = versions_->LogAndApply(&edit, &mutex_); // VersionSet 合并当前的VersionEdit添加的SST形成新的Version
   }
 
   if (s.ok()) {
-    // Commit to the new state
+    // 清理 IMemTalbe
     imm_->Unref();
     imm_ = nullptr;
     has_imm_.store(false, std::memory_order_release);
-    RemoveObsoleteFiles();
+    RemoveObsoleteFiles();  // 未完待续。。。。。
+
   } else {
     RecordBackgroundError(s);
   }

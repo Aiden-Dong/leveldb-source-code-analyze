@@ -158,6 +158,7 @@ bool SomeFileOverlapsRange(const InternalKeyComparator& icmp,
                            const std::vector<FileMetaData*>& files,
                            const Slice* smallest_user_key,
                            const Slice* largest_user_key) {
+
   const Comparator* ucmp = icmp.user_comparator();
 
   // 如果是第0层文件，则顺序遍历
@@ -632,15 +633,16 @@ void Version::Unref() {
 
 /***
  * 检查是否和指定 level 的文件有重叠。
+ * 不重叠返回 false
+ * 重叠返回   true
+ *
  * 内部直接调用 SomeFileOverlapsRange
  * @param level                 要检查的 level 层
  * @param smallest_user_key     给定的重叠 key 下限
  * @param largest_user_key      给定的重叠 key 的上限
- * @return
  */
-bool Version::OverlapInLevel(int level,
-                             const Slice* smallest_user_key,
-                             const Slice* largest_user_key) {
+bool Version::OverlapInLevel(int level, const Slice* smallest_user_key, const Slice* largest_user_key) {
+
   return SomeFileOverlapsRange(vset_->icmp_,
                                (level > 0),
                                files_[level],
@@ -648,30 +650,35 @@ bool Version::OverlapInLevel(int level,
 }
 
 /****
- * minor compaction 时， 选择要dump的level级别。
+ * minor compaction 时， 选择要落地的level级别。
  * 由于第0层文件频繁的被访问，而且有严格的数量限制，另外多个SST之间还存在重叠，
- * 所以为了减少读放大，我们是否可以考虑将内存中的文件dump到磁盘时尽可能送到高层呢?
+ * 所以为了减少读放大，我们是否可以考虑将内存中的文件落地到磁盘时尽可能送到高层呢?
  *
  * PickLevelForMemTableOutput 函数作用就是判断最多能将sst送到第几层,它的原则是:
- * 1. 大于level-0的各层文件之间时有序的，如果放到对应的层数会导致文件间不严格有序，影响读取，则放弃
- * 2. 如果放到level+1层，于level+2层文件重叠很大，导致compact到该文件时，overlap文件过大，则放弃
- * 3. 最大返回level2
+ *
+ * 1. 如果落地的SST的key的范围与level-0层SST范围有重叠， 则数据落地到level-0层
+ * 2. 如果跟level+1层数据有重叠，则数据放弃向level+1层落地， 最终落地到level层
+ * 3. 如果跟level+2层重叠的所有SST总文件大小超过20M, 则数据放弃向level+1层落地， 最终落地到level层
+ * 4. level不能超过 2
  *
  * @param smallest_user_key   要写出的sst的最小值
  * @param largest_user_key    要写出的sst的最大值
  * @return level
  */
-int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key,
-                                        const Slice& largest_user_key) {
+int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key, const Slice& largest_user_key) {
+
   int level = 0;
 
   // 首先判断是否跟 level-0 层文件有重叠
   // 如果跟level-0层文件有重叠，则直接写到level-0
   if (!OverlapInLevel(0, &smallest_user_key, &largest_user_key)) {
+
     // Push to next level if there is no overlap in next level,
     // and the #bytes overlapping in the level after that are limited.
+
     InternalKey start(smallest_user_key, kMaxSequenceNumber, kValueTypeForSeek);
     InternalKey limit(largest_user_key, 0, static_cast<ValueType>(0));
+
     std::vector<FileMetaData*> overlaps;
 
     while (level < config::kMaxMemCompactLevel) {
@@ -683,7 +690,10 @@ int Version::PickLevelForMemTableOutput(const Slice& smallest_user_key,
       }
 
       if (level + 2 < config::kNumLevels) {
-        // 如果跟level+2层.合并时需要合并的文件量太大，则放弃
+
+        // 计算level+2层与此key重叠的sst所占用的文件总大小
+        // 如果重叠的sst超过20M则放弃Level+1
+        // 防止后期一次性合并的文件过多
         GetOverlappingInputs(level + 2, &start, &limit, &overlaps);
         const int64_t sum = TotalFileSize(overlaps);
         if (sum > MaxGrandParentOverlapBytes(vset_->options_)) {
