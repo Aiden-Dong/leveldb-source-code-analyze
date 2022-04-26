@@ -328,6 +328,7 @@ class VersionSet {
 
   /***
    * 分配并返回全局新的文件编号
+   * 用于 logfile, sstfile
    * 该编号从manifest读取并且初始化新的
    * @return
    */

@@ -199,10 +199,9 @@ class DBImpl : public DB {
 
   std::atomic<bool> has_imm_;                                    // 表示是否已经有一个 imm_, 因为只有一个线程在压缩， 所以只有一个 imm_
 
-  WritableFile* logfile_;                                        // WAL 句柄
+  WritableFile* logfile_;                                        // 日志文件写句柄， log_的底层写文件接口
   uint64_t logfile_number_ GUARDED_BY(mutex_);                   // 当前日志编号
-
-  log::Writer* log_;                                             //
+  log::Writer* log_;                                             // WAL 操作句柄
 
   uint32_t seed_ GUARDED_BY(mutex_);                             // 用于采样
 

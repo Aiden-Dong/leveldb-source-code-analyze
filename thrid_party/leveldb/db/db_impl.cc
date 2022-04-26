@@ -503,20 +503,26 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 }
 
 /***
- * 写 SST
- * @param mem
- * @param edit
- * @param base
- * @return
+ * IMemTable写到level0层sst
+ *
+ * @param mem  要被刷盘的 SST
+ * @param edit 用于记录基于当前版本的变更项
+ * @param base 当前版本链接
  */
 Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
                                 Version* base) {
   mutex_.AssertHeld();
-  const uint64_t start_micros = env_->NowMicros();
+
+  const uint64_t start_micros = env_->NowMicros();  // 获取开始写盘的微秒数
+
   FileMetaData meta;
-  meta.number = versions_->NewFileNumber();
-  pending_outputs_.insert(meta.number);
-  Iterator* iter = mem->NewIterator();   // 获取 memtable 的迭代器
+
+  meta.number = versions_->NewFileNumber();         // 拿到一个新的文件编号用于写SST
+
+  pending_outputs_.insert(meta.number);             // 将文件编号压入等待队列
+
+  Iterator* iter = mem->NewIterator();               // 获取 memtable 的迭代器，用于遍历 kv
+
   Log(options_.info_log, "Level-0 table #%llu: started", (unsigned long long)meta.number);
 
   Status s;
@@ -554,12 +560,14 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
 
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
+
   assert(imm_ != nullptr);
 
   // Save the contents of the memtable as a new Table
   VersionEdit edit;
-  Version* base = versions_->current();
+  Version* base = versions_->current();  // 获得当前的版本
   base->Ref();
+
   Status s = WriteLevel0Table(imm_, &edit, base);
   base->Unref();
 
@@ -665,30 +673,42 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   }
 }
 
-void DBImpl::MaybeScheduleCompaction() {
+/****
+ * 开启后台压缩，需要注意的是 leveldb 只有一个压缩线程
+ */
+void DBImpl:: MaybeScheduleCompaction() {
+
   mutex_.AssertHeld();
+
   if (background_compaction_scheduled_) {
-    // Already scheduled
+    // 表示后台已经有一个现成在调度
   } else if (shutting_down_.load(std::memory_order_acquire)) {
-    // DB is being deleted; no more background compactions
+    // DB 开始关闭
+
   } else if (!bg_error_.ok()) {
     // Already got an error; no more changes
   } else if (imm_ == nullptr && manual_compaction_ == nullptr &&
              !versions_->NeedsCompaction()) {
-    // No work to be done
+    // 没有需要刷写的 IMemTable
   } else {
     background_compaction_scheduled_ = true;
     env_->Schedule(&DBImpl::BGWork, this);
   }
 }
 
+
 void DBImpl::BGWork(void* db) {
   reinterpret_cast<DBImpl*>(db)->BackgroundCall();
 }
 
+/****
+ * 用于执行 IMemTable 的刷盘线程
+ */
 void DBImpl::BackgroundCall() {
-  MutexLock l(&mutex_);
+  MutexLock l(&mutex_);          // 获得锁
+
   assert(background_compaction_scheduled_);
+
   if (shutting_down_.load(std::memory_order_acquire)) {
     // No more background work when shutting down.
   } else if (!bg_error_.ok()) {
@@ -699,8 +719,7 @@ void DBImpl::BackgroundCall() {
 
   background_compaction_scheduled_ = false;
 
-  // Previous compaction may have produced too many files in a level,
-  // so reschedule another compaction if needed.
+  // 以前的压缩可能在一个级别中生成了太多文件，因此如果需要，请重新安排另一次压缩。
   MaybeScheduleCompaction();
   background_work_finished_signal_.SignalAll();
 }
@@ -708,6 +727,7 @@ void DBImpl::BackgroundCall() {
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
+  // IMemTable刷盘
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
@@ -1355,8 +1375,7 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mutex_.Lock();
     } else if (!force && (mem_->ApproximateMemoryUsage() <= options_.write_buffer_size)) {
       // 表示如果允许延迟，并且 memtable 使用的内存没有超过限制
-      // 则退出
-
+      // 可以继续写入
       break;
     } else if (imm_ != nullptr) {
       // 如果已经有一个monior压缩的线程了，此时就不能在启用一个了
@@ -1396,6 +1415,8 @@ Status DBImpl::MakeRoomForWrite(bool force) {
       mem_ = new MemTable(internal_comparator_);  // 重新构建一个 MemTable 用于用户数据写入
       mem_->Ref();
       force = false;  // Do not force another compaction if have room
+
+      // 开始压缩
       MaybeScheduleCompaction();
     }
   }

@@ -17,6 +17,9 @@ namespace leveldb {
 class InternalKeyComparator;
 class MemTableIterator;
 
+/***
+ * 数据内存缓冲区，内部使用skiplist实现
+ */
 class MemTable {
  public:
 
