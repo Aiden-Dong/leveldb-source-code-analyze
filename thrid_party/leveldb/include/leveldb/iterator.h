@@ -45,7 +45,7 @@ class LEVELDB_EXPORT Iterator {
   virtual bool Valid() const = 0;
 
   /***
-   * 移动游标到最开始位置
+   * 移动游标到最开始位置， 正向迭代初始化
    * key_value 指向最开始的 kv
    */
   virtual void SeekToFirst() = 0;

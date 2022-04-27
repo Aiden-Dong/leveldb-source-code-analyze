@@ -1581,9 +1581,10 @@ void VersionSet::GetRange2(const std::vector<FileMetaData*>& inputs1,
 }
 
 /****
- * 创建多层合并迭代器， 用于 Compaction 后的数据进行 merge
- * @param c
- * @return
+ * 待压缩的SST迭代器 MergingIterator
+ * 迭代对象是本次待压缩的SST集合
+ *
+ * @param c 压缩信息
  */
 Iterator* VersionSet::MakeInputIterator(Compaction* c) {
   ReadOptions options;
@@ -1951,10 +1952,12 @@ Compaction::~Compaction() {
 
 /****
  * 表示本次是否可以将本次SST直接移动到上一层
+ * 本来压缩要合并level层与level+1层，但是由于level层与level+1层key范围没有重叠
+ * 所以inputs_1为空， 此时或许可以直接将level层移动到level+1层
  *
  * level层只有一个文件
  * level层与level+1层没有重叠
- * 同时 grandparents_ 中有交集的文件总size小于配置值，
+ * 同时 grandparents_ 中有交集的文件总size小于配置值(20M)，
  * 这是为了避免创建的单个level+1文件后续 merge 到 level+2 时的高开销
  */
 bool Compaction::IsTrivialMove() const {
@@ -2019,6 +2022,9 @@ bool Compaction::IsBaseLevelForKey(const Slice& user_key) {
   return true;
 }
 
+
+// 这个地方有问题
+// 一直返回false ?
 bool Compaction::ShouldStopBefore(const Slice& internal_key) {
 
   // 获取当前的 versionset
@@ -2037,6 +2043,7 @@ bool Compaction::ShouldStopBefore(const Slice& internal_key) {
 
   seen_key_ = true;
 
+  // overlapped_bytes_ >= 20M
   if (overlapped_bytes_ > MaxGrandParentOverlapBytes(vset->options_)) {
     // Too much overlap for current output; start new output
     overlapped_bytes_ = 0;

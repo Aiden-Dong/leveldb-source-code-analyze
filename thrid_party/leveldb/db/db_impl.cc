@@ -51,14 +51,20 @@ struct DBImpl::Writer {
   port::CondVar cv;
 };
 
+/****
+ * 用于记录压缩过程信息
+ */
 struct DBImpl::CompactionState {
   // Files produced by compaction
+
+  //输出文件
   struct Output {
-    uint64_t number;
-    uint64_t file_size;
-    InternalKey smallest, largest;
+    uint64_t number;                 // 文件编号
+    uint64_t file_size;              // 文件大小
+    InternalKey smallest, largest;   // key 范围
   };
 
+  // 用于指向当前正在输出的文件信息
   Output* current_output() { return &outputs[outputs.size() - 1]; }
 
   explicit CompactionState(Compaction* c)
@@ -68,7 +74,7 @@ struct DBImpl::CompactionState {
         builder(nullptr),
         total_bytes(0) {}
 
-  Compaction* const compaction;
+  Compaction* const compaction;      // 压缩信息
 
   // Sequence numbers < smallest_snapshot are not significant since we
   // will never have to service a snapshot below smallest_snapshot.
@@ -76,13 +82,13 @@ struct DBImpl::CompactionState {
   // we can drop all entries for the same key with sequence numbers < S.
   SequenceNumber smallest_snapshot;
 
-  std::vector<Output> outputs;
+  std::vector<Output> outputs;      // 所有的输出文件，每次合并可能会写出多个文件
 
   // State kept for output being generated
-  WritableFile* outfile;
-  TableBuilder* builder;
+  WritableFile* outfile;            // 写文件的操作句柄， 只关联到最新的output文件
+  TableBuilder* builder;            // SST 构建句柄，只关联到最新的output文件
 
-  uint64_t total_bytes;
+  uint64_t total_bytes;            // 此次压缩的总的压缩文件大小
 };
 
 // Fix user-supplied options to be reasonable
@@ -222,6 +228,12 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
   }
 }
 
+/*****
+ * 清理过期文件
+ *  对于 MANIFEST文件， 只保留两个版本
+ *  对于 WAL 则保留MANIFEST文件中的涉及到的WAL
+ *  对于 SST 则保留VersionSet中涉及到的所有的SST
+ */
 void DBImpl::RemoveObsoleteFiles() {
 
   mutex_.AssertHeld();
@@ -742,9 +754,7 @@ void DBImpl::BGWork(void* db) {
   reinterpret_cast<DBImpl*>(db)->BackgroundCall();
 }
 
-/****
- * 用于执行 IMemTable 的刷盘线程
- */
+
 void DBImpl::BackgroundCall() {
   MutexLock l(&mutex_);          // 获得锁
 
@@ -766,9 +776,18 @@ void DBImpl::BackgroundCall() {
 }
 
 /****
+ * 基于线程异步执行的压缩过程
+ * 首先会进行Minor Compaction过程，也就是MemTable刷盘过程
+ *    - 过程调用的是 CompactMemTable()
+ * 然后进行Major Compaction过程，合并SST
+ *    - 如果有用户手动触发压缩行为， 则基于压缩行为调用 VersionSet::CompactRange() 方法
+ *    - 否则调用 VersionSet::PickCompaction() 计算有没有达到压缩的阈值
  *
+ * 对于Major压缩过程，如果能直接移动， 则直接修改元信息移动
+ * 否则调用DoCompactionWork进行压缩。
  */
 void DBImpl::BackgroundCompaction() {
+
   mutex_.AssertHeld();
 
   // IMemTable刷盘 -------------  Minor Compaction
@@ -779,7 +798,6 @@ void DBImpl::BackgroundCompaction() {
 
 
   // Major Compaction
-
   Compaction* c;
   bool is_manual = (manual_compaction_ != nullptr);  // 存在压缩行为
   InternalKey manual_end;
@@ -801,7 +819,9 @@ void DBImpl::BackgroundCompaction() {
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
-    // 基于指标性触发
+    // 判断是否达到了触发压缩的阈值
+    // 第一种条件是某一个level层的数据量过大
+    // 第二种条件是某一个sst的查询次数过多
     c = versions_->PickCompaction();
   }
 
@@ -809,13 +829,19 @@ void DBImpl::BackgroundCompaction() {
   if (c == nullptr) {
     // Nothing to do
   } else if (!is_manual && c->IsTrivialMove()) {
-    // Move file to next level
-    assert(c->num_input_files(0) == 1);
-    FileMetaData* f = c->input(0, 0);
+    // 这个表示SST达到了压缩阈值， 并且此次压缩可以直接将需要压缩的level层SST直接移动到level+1层
+
+    assert(c->num_input_files(0) == 1);  // 校验是否只有一个文件
+
+    FileMetaData* f = c->input(0, 0);  // 拿到文件
+
+    // 将SST从level层直接移动到level+1层
     c->edit()->RemoveFile(c->level(), f->number);
-    c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest,
-                       f->largest);
+    c->edit()->AddFile(c->level() + 1, f->number, f->file_size, f->smallest, f->largest);
+
+    // 更新一个版本
     status = versions_->LogAndApply(c->edit(), &mutex_);
+
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
@@ -825,11 +851,15 @@ void DBImpl::BackgroundCompaction() {
         static_cast<unsigned long long>(f->file_size),
         status.ToString().c_str(), versions_->LevelSummary(&tmp));
   } else {
+
+    // 如果不能移动的， 开始压缩操作， 调用 CompactionState 生成新的压缩文件
     CompactionState* compact = new CompactionState(c);
     status = DoCompactionWork(compact);
     if (!status.ok()) {
       RecordBackgroundError(status);
     }
+
+    // 进行清理操作
     CleanupCompaction(compact);
     c->ReleaseInputs();
     RemoveObsoleteFiles();
@@ -844,6 +874,7 @@ void DBImpl::BackgroundCompaction() {
     Log(options_.info_log, "Compaction error: %s", status.ToString().c_str());
   }
 
+  // 返回手动压缩的结束状态
   if (is_manual) {
     ManualCompaction* m = manual_compaction_;
     if (!status.ok()) {
@@ -859,6 +890,11 @@ void DBImpl::BackgroundCompaction() {
   }
 }
 
+/*****
+ * 做压缩清理动作
+ * 释放掉没有释放掉的句柄
+ *
+ */
 void DBImpl::CleanupCompaction(CompactionState* compact) {
   mutex_.AssertHeld();
   if (compact->builder != nullptr) {
@@ -876,9 +912,17 @@ void DBImpl::CleanupCompaction(CompactionState* compact) {
   delete compact;
 }
 
+
+/***
+ * 构建用于写出压缩数据的输出文件句柄
+ * TableBuilder
+ */
 Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
+
   assert(compact != nullptr);
   assert(compact->builder == nullptr);
+
+  // 拿到写入的文件编号
   uint64_t file_number;
   {
     mutex_.Lock();
@@ -892,7 +936,7 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
     mutex_.Unlock();
   }
 
-  // Make the output file
+  // 构建输出文件
   std::string fname = TableFileName(dbname_, file_number);
   Status s = env_->NewWritableFile(fname, &compact->outfile);
   if (s.ok()) {
@@ -901,43 +945,55 @@ Status DBImpl::OpenCompactionOutputFile(CompactionState* compact) {
   return s;
 }
 
-Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
-                                          Iterator* input) {
+/****
+ * SST compaction 停止写出时的操作，可能发生在写过程文件数据量过大，或者已经完成compaction
+ * 过程主要是完善CompactionState元信息
+ *  TableBuilder::Finish() 完成SST构建
+ *  数据落盘
+ *  关闭文件句柄
+ *  校验SST
+ */
+Status DBImpl::FinishCompactionOutputFile(CompactionState* compact, Iterator* input) {
+
+
   assert(compact != nullptr);
   assert(compact->outfile != nullptr);
   assert(compact->builder != nullptr);
 
-  const uint64_t output_number = compact->current_output()->number;
+  const uint64_t output_number = compact->current_output()->number;      // 当前文件编号
   assert(output_number != 0);
 
   // Check for iterator errors
   Status s = input->status();
-  const uint64_t current_entries = compact->builder->NumEntries();
+  const uint64_t current_entries = compact->builder->NumEntries();       // 当前记录数
+
   if (s.ok()) {
-    s = compact->builder->Finish();
+    s = compact->builder->Finish();                                      // 完成数据写入
   } else {
     compact->builder->Abandon();
   }
   const uint64_t current_bytes = compact->builder->FileSize();
-  compact->current_output()->file_size = current_bytes;
+  compact->current_output()->file_size = current_bytes;                   // 记录当前文件字节数
   compact->total_bytes += current_bytes;
+
   delete compact->builder;
   compact->builder = nullptr;
 
-  // Finish and check for file errors
+  // 数据落盘
   if (s.ok()) {
     s = compact->outfile->Sync();
   }
+  // 关闭文件
   if (s.ok()) {
     s = compact->outfile->Close();
   }
+
   delete compact->outfile;
   compact->outfile = nullptr;
 
   if (s.ok() && current_entries > 0) {
-    // Verify that the table is usable
-    Iterator* iter =
-        table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);
+    // 校验 SST 的文件写入是否正确
+    Iterator* iter = table_cache_->NewIterator(ReadOptions(), output_number, current_bytes);
     s = iter->status();
     delete iter;
     if (s.ok()) {
@@ -947,9 +1003,13 @@ Status DBImpl::FinishCompactionOutputFile(CompactionState* compact,
           (unsigned long long)current_bytes);
     }
   }
+
   return s;
 }
 
+/***
+ * 完成compation后，更新Version操作
+ */
 Status DBImpl::InstallCompactionResults(CompactionState* compact) {
   mutex_.AssertHeld();
   Log(options_.info_log, "Compacted %d@%d + %d@%d files => %lld bytes",
@@ -957,61 +1017,90 @@ Status DBImpl::InstallCompactionResults(CompactionState* compact) {
       compact->compaction->num_input_files(1), compact->compaction->level() + 1,
       static_cast<long long>(compact->total_bytes));
 
-  // Add compaction outputs
+  // 删除压缩记录中的SST
   compact->compaction->AddInputDeletions(compact->compaction->edit());
+
   const int level = compact->compaction->level();
+
+  // 将新增的文件添加到level+1层
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     const CompactionState::Output& out = compact->outputs[i];
-    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size,
-                                         out.smallest, out.largest);
+    compact->compaction->edit()->AddFile(level + 1, out.number, out.file_size, out.smallest, out.largest);
   }
+
+  // 应用到新的版本中
   return versions_->LogAndApply(compact->compaction->edit(), &mutex_);
 }
 
+/****
+ * 执行压缩过程
+ * 过程中会合并掉重复的user_key
+ * 在迭代压缩的kv过程中， 如果MemTable满数据， 还是会优先触发Memtable合并
+ * 如果写的文件大小超过阈值(默认2M), 会关掉写出的SST, 重新开一个新的SST
+ * 所以每次合并可能会写出多个SST文件
+ *
+ * ??? snapshots_ 的设置
+ * ??? seqnumber 怎么写的
+ */
 Status DBImpl::DoCompactionWork(CompactionState* compact) {
   const uint64_t start_micros = env_->NowMicros();
   int64_t imm_micros = 0;  // Micros spent doing imm_ compactions
 
   Log(options_.info_log, "Compacting %d@%d + %d@%d files",
       compact->compaction->num_input_files(0), compact->compaction->level(),
-      compact->compaction->num_input_files(1),
-      compact->compaction->level() + 1);
+      compact->compaction->num_input_files(1), compact->compaction->level() + 1);
 
   assert(versions_->NumLevelFiles(compact->compaction->level()) > 0);
   assert(compact->builder == nullptr);
   assert(compact->outfile == nullptr);
+
+  // snapshots 的作用？
   if (snapshots_.empty()) {
     compact->smallest_snapshot = versions_->LastSequence();
   } else {
     compact->smallest_snapshot = snapshots_.oldest()->sequence_number();
   }
 
+  // 拿到待压缩对象的SST
   Iterator* input = versions_->MakeInputIterator(compact->compaction);
 
   // Release mutex while we're actually doing the compaction work
   mutex_.Unlock();
 
+  // 初始化迭代器
   input->SeekToFirst();
+
+
+
   Status status;
   ParsedInternalKey ikey;
+
+  // 以下三个变量用于记录当前的user_key
   std::string current_user_key;
   bool has_current_user_key = false;
   SequenceNumber last_sequence_for_key = kMaxSequenceNumber;
+
   while (input->Valid() && !shutting_down_.load(std::memory_order_acquire)) {
-    // Prioritize immutable compaction work
+
+    // 有待压缩的 MemTable, 先进行压缩
     if (has_imm_.load(std::memory_order_relaxed)) {
       const uint64_t imm_start = env_->NowMicros();
       mutex_.Lock();
+
+
       if (imm_ != nullptr) {
         CompactMemTable();
-        // Wake up MakeRoomForWrite() if necessary.
         background_work_finished_signal_.SignalAll();
       }
+
       mutex_.Unlock();
       imm_micros += (env_->NowMicros() - imm_start);
     }
 
     Slice key = input->key();
+
+    // 如果合并后的key与grandparent重叠的字节大于阈值
+    // 此时需要开启新的sst文件
     if (compact->compaction->ShouldStopBefore(key) &&
         compact->builder != nullptr) {
       status = FinishCompactionOutputFile(compact, input);
@@ -1022,19 +1111,19 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
 
     // Handle key/value, add to state, etc.
     bool drop = false;
+
     if (!ParseInternalKey(key, &ikey)) {
-      // Do not hide error keys
+      // 可以 error
       current_user_key.clear();
       has_current_user_key = false;
       last_sequence_for_key = kMaxSequenceNumber;
     } else {
       if (!has_current_user_key ||
-          user_comparator()->Compare(ikey.user_key, Slice(current_user_key)) !=
-              0) {
+          user_comparator()->Compare(ikey.user_key, Slice(current_user_key)) != 0) {
         // First occurrence of this user key
-        current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());
+        current_user_key.assign(ikey.user_key.data(), ikey.user_key.size());  //设置当前处理的user key
         has_current_user_key = true;
-        last_sequence_for_key = kMaxSequenceNumber;
+        last_sequence_for_key = kMaxSequenceNumber;    // 对于新的出现的user_key不能被删除， 所以设置 sequence_num 为最大值
       }
 
       if (last_sequence_for_key <= compact->smallest_snapshot) {
@@ -1043,6 +1132,9 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
       } else if (ikey.type == kTypeDeletion &&
                  ikey.sequence <= compact->smallest_snapshot &&
                  compact->compaction->IsBaseLevelForKey(ikey.user_key)) {
+        // 1. 该key被标记为删除
+        // 2. 过于古老
+        // 3. 更高层已经没有该key了
         // For this user key:
         // (1) there is no data in higher levels
         // (2) data in lower levels will have larger sequence numbers
@@ -1068,20 +1160,27 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
     if (!drop) {
       // Open output file if necessary
       if (compact->builder == nullptr) {
+        // 构建一个 TableBuilder, 用于写出压缩SST
         status = OpenCompactionOutputFile(compact);
         if (!status.ok()) {
           break;
         }
       }
+
+      // 记录当前写出文件的最小user_key
       if (compact->builder->NumEntries() == 0) {
         compact->current_output()->smallest.DecodeFrom(key);
       }
+
+      // 用替代操作，记录当前文件的最大的user_key
       compact->current_output()->largest.DecodeFrom(key);
+
+      // 将当前的key添加到输出文件中
       compact->builder->Add(key, input->value());
 
-      // Close output file if it is big enough
-      if (compact->builder->FileSize() >=
-          compact->compaction->MaxOutputFileSize()) {
+      // 如果文件大小超过设置文件上限(默认2M)则停止写出
+      // 并对写出文件做最后整理关闭工作
+      if (compact->builder->FileSize() >= compact->compaction->MaxOutputFileSize()) {
         status = FinishCompactionOutputFile(compact, input);
         if (!status.ok()) {
           break;
@@ -1095,6 +1194,7 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   if (status.ok() && shutting_down_.load(std::memory_order_acquire)) {
     status = Status::IOError("Deleting DB during compaction");
   }
+
   if (status.ok() && compact->builder != nullptr) {
     status = FinishCompactionOutputFile(compact, input);
   }
@@ -1104,26 +1204,38 @@ Status DBImpl::DoCompactionWork(CompactionState* compact) {
   delete input;
   input = nullptr;
 
+  // 完成压缩
+
+  // 统计压缩时间
   CompactionStats stats;
   stats.micros = env_->NowMicros() - start_micros - imm_micros;
+
+  // 压缩前文件量
   for (int which = 0; which < 2; which++) {
     for (int i = 0; i < compact->compaction->num_input_files(which); i++) {
       stats.bytes_read += compact->compaction->input(which, i)->file_size;
     }
   }
+
+  // 压缩后文件量
   for (size_t i = 0; i < compact->outputs.size(); i++) {
     stats.bytes_written += compact->outputs[i].file_size;
   }
 
   mutex_.Lock();
+
+  // 追加压缩信息
   stats_[compact->compaction->level() + 1].Add(stats);
 
   if (status.ok()) {
+    // 更新Version信息， 删掉合并的SST, 增加新的SST到level+1层
     status = InstallCompactionResults(compact);
   }
+
   if (!status.ok()) {
     RecordBackgroundError(status);
   }
+
   VersionSet::LevelSummaryStorage tmp;
   Log(options_.info_log, "compacted to: %s", versions_->LevelSummary(&tmp));
   return status;
