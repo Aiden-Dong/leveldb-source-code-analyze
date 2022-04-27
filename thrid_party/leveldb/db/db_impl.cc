@@ -199,19 +199,24 @@ DBImpl::~DBImpl() {
 
 Status DBImpl::NewDB() {
   VersionEdit new_db;
-  new_db.SetComparatorName(user_comparator()->Name());
-  new_db.SetLogNumber(0);
-  new_db.SetNextFile(2);
-  new_db.SetLastSequence(0);
 
+  new_db.SetComparatorName(user_comparator()->Name());  // 设置比较器名称
+  new_db.SetLogNumber(0);                                // 设置WAL日志文件编号-0
+  new_db.SetNextFile(2);                                 // 设置MENIFEST文件编号-2
+  new_db.SetLastSequence(0);                              // 设置lastseqence-0
+
+  // 创建 MANIFEST-001 文件
   const std::string manifest = DescriptorFileName(dbname_, 1);
   WritableFile* file;
   Status s = env_->NewWritableFile(manifest, &file);
+
   if (!s.ok()) {
     return s;
   }
   {
     log::Writer log(file);
+
+    // 将VersionEdit 信息写入MENIFEST
     std::string record;
     new_db.EncodeTo(&record);
     s = log.AddRecord(record);
@@ -335,29 +340,32 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   // Ignore error from CreateDir since the creation of the DB is
   // committed only when the descriptor is created, and this directory
   // may already exist from a previous failed creation attempt.
-  env_->CreateDir(dbname_);
+  env_->CreateDir(dbname_);  // 创建数据库如果不存在的情况
+
   assert(db_lock_ == nullptr);
-  Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);
+
+  Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);  // 创建文件锁
+
   if (!s.ok()) {
     return s;
   }
 
   if (!env_->FileExists(CurrentFileName(dbname_))) {
+    // 如果 CURRENT 文件不存在， 表示新服务，没有MANIFEST 文件
+
     if (options_.create_if_missing) {
-      Log(options_.info_log, "Creating DB %s since it was missing.",
-          dbname_.c_str());
+      // 创建新的DB
+      Log(options_.info_log, "Creating DB %s since it was missing.", dbname_.c_str());
       s = NewDB();
       if (!s.ok()) {
         return s;
       }
     } else {
-      return Status::InvalidArgument(
-          dbname_, "does not exist (create_if_missing is false)");
+      return Status::InvalidArgument( dbname_, "does not exist (create_if_missing is false)");
     }
   } else {
     if (options_.error_if_exists) {
-      return Status::InvalidArgument(dbname_,
-                                     "exists (error_if_exists is true)");
+      return Status::InvalidArgument(dbname_, "exists (error_if_exists is true)");
     }
   }
 
@@ -1714,6 +1722,7 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
   bool save_manifest = false;
 
   Status s = impl->Recover(&edit, &save_manifest);
+
   if (s.ok() && impl->mem_ == nullptr) {
     // Create new log and a corresponding memtable.
     uint64_t new_log_number = impl->versions_->NewFileNumber();

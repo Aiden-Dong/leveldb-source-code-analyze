@@ -51,7 +51,6 @@ int main(int argc, char*argv[]){
 void test_leveldb_normal(){
     leveldb::DB * ldbptr = nullptr;
     leveldb::Options options;
-
     options.create_if_missing = true;
 
     const std::string db_path = "./testdb.ldb";
