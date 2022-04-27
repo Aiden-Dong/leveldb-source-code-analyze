@@ -91,7 +91,7 @@ Status WriteBatch::Iterate(Handler* handler) const {
 }
 
 /***
- * 获取SeqNum中元素数量
+ * 获取WriteBatch中元素的数量
  */
 int WriteBatchInternal::Count(const WriteBatch* b) {
   return DecodeFixed32(b->rep_.data() + 8);
@@ -122,9 +122,10 @@ void WriteBatchInternal::SetSequence(WriteBatch* b, SequenceNumber seq) {
  * 插入一个KeyValue 到WriteBatch中
  */
 void WriteBatch::Put(const Slice& key, const Slice& value) {
-  // 更新 key count 部分，增一
+  // 更新 Header 中关于元素数量部分
+  // 增一操作
   WriteBatchInternal::SetCount(this, WriteBatchInternal::Count(this) + 1);
-  // 设置数据类型为 : kTypeValue
+  // 设置数据类型为 : kTypeValue(插入操作)
   rep_.push_back(static_cast<char>(kTypeValue));
 
   // 填充数据

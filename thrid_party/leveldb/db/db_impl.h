@@ -36,12 +36,19 @@ class DBImpl : public DB {
   ~DBImpl() override;
 
   // Implementations of the DB interface
-  Status Put(const WriteOptions&, const Slice& key,
-             const Slice& value) override;
+  Status Put(const WriteOptions&, const Slice& key, const Slice& value) override;
   Status Delete(const WriteOptions&, const Slice& key) override;
   Status Write(const WriteOptions& options, WriteBatch* updates) override;
-  Status Get(const ReadOptions& options, const Slice& key,
-             std::string* value) override;
+
+  /****
+   * 1. 快照判断
+   * 2. 查询 MemTable
+   * 3. 查询 IMemTable
+   * 4. 查询 SST
+   * 5. 更新 current->UpdateState
+   * 6. MaybeScheduleCompation
+   */
+  Status Get(const ReadOptions& options, const Slice& key, std::string* value) override;
   Iterator* NewIterator(const ReadOptions&) override;
   const Snapshot* GetSnapshot() override;
   void ReleaseSnapshot(const Snapshot* snapshot) override;

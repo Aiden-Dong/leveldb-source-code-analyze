@@ -40,7 +40,10 @@ void test_search();
 
 int main(int argc, char*argv[]){
 
-  test_leveldb_normal();
+//  test_leveldb_normal();
+
+  std::cout << (4 << 20) << std::endl;
+
 
   return 0;
 }

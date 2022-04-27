@@ -32,8 +32,10 @@ class Slice;
 
 /****
  * 基本数据结构 :
- *  | SeqNum(8字节) | Key个数(4字节) | kTypeValue(1字节)    | key 长度(变长32位) | key 具体数据 | value 长度(变长32位) | value 具体数据 | ...
- *  ............................... | kTypeDeletion(1字节) | key 长度(变长32位) | key 具体数据 | ...
+ *  | SeqNum(8字节) | Key个数(4字节) |
+ *  | kTypeValue(1字节)    | key 长度(变长32位) | key 具体数据 | value 长度(变长32位) | value 具体数据 |
+ *  ...
+ *  | kTypeDeletion(1字节) | key 长度(变长32位) | key 具体数据 |
  */
 class LEVELDB_EXPORT WriteBatch {
  public:
@@ -51,7 +53,12 @@ class LEVELDB_EXPORT WriteBatch {
 
   ~WriteBatch();
 
-  // 将 Key->value 写入数据库
+
+  /***
+   * 接受用户提交的 key, value 写入系统
+   * @param key    user_key
+   * @param value  value
+   */
   void Put(const Slice& key, const Slice& value);
 
   // 以追加写的方式删除 key
