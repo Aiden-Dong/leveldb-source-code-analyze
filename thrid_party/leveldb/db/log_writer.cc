@@ -36,6 +36,7 @@ Writer::Writer(WritableFile* dest, uint64_t dest_length)
 Writer::~Writer() = default;
 
 Status Writer::AddRecord(const Slice& slice) {
+
   const char* ptr = slice.data(); // 数据体指针
   size_t left = slice.size();     // 数据体大小
 
@@ -44,7 +45,9 @@ Status Writer::AddRecord(const Slice& slice) {
   // zero-length record
   Status s;
   bool begin = true;
+
   do {
+
     const int leftover = kBlockSize - block_offset_;  // 计算剩余空间
 
     assert(leftover >= 0);
@@ -53,7 +56,6 @@ Status Writer::AddRecord(const Slice& slice) {
       // 剩余空间不足以存放 record header
 
       if (leftover > 0) {
-        // Fill the trailer (literal below relies on kHeaderSize being 7)
         static_assert(kHeaderSize == 7, "");
         // 剩余空间用0填充
         dest_->Append(Slice("\x00\x00\x00\x00\x00\x00", leftover));
@@ -73,7 +75,8 @@ Status Writer::AddRecord(const Slice& slice) {
     const size_t fragment_length = (left < avail) ? left : avail;
 
     RecordType type;
-    const bool end = (left == fragment_length);
+    const bool end = (left == fragment_length);  // 是否能够写完
+
     if (begin && end) {
       // 这个数据包能够一次性存储到一个 block 里面
       type = kFullType;
@@ -105,6 +108,7 @@ Status Writer::AddRecord(const Slice& slice) {
  * @return
  */
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr,size_t length) {
+
   assert(length <= 0xffff);  // Must fit in two bytes
   assert(block_offset_ + kHeaderSize + length <= kBlockSize);
 
