@@ -602,14 +602,17 @@ class PosixEnv : public Env {
                      std::vector<std::string>* result) override {
     result->clear();
     ::DIR* dir = ::opendir(directory_path.c_str());
+
     if (dir == nullptr) {
       return PosixError(directory_path, errno);
     }
+
     struct ::dirent* entry;
     while ((entry = ::readdir(dir)) != nullptr) {
       // 包含普通文件与目录
       result->emplace_back(entry->d_name);
     }
+
     ::closedir(dir);
     return Status::OK();
   }

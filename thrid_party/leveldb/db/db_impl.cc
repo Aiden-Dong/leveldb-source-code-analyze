@@ -223,6 +223,7 @@ void DBImpl::MaybeIgnoreError(Status* s) const {
 }
 
 void DBImpl::RemoveObsoleteFiles() {
+
   mutex_.AssertHeld();
 
   if (!bg_error_.ok()) {
@@ -231,29 +232,42 @@ void DBImpl::RemoveObsoleteFiles() {
     return;
   }
 
-  // Make a set of all of the live files
+  // 调用的是拷贝构造函数， 复制 pending_outputs_ 里面的sst文件编号
   std::set<uint64_t> live = pending_outputs_;
+
+  // 将所有的version中存活过的sst插入到 live中
   versions_->AddLiveFiles(&live);
 
   std::vector<std::string> filenames;
+
+  // 遍历dbname_目录下的文件与目录(仅第一层)，将文件名放置到filenames中
   env_->GetChildren(dbname_, &filenames);  // Ignoring errors on purpose
+
   uint64_t number;
   FileType type;
   std::vector<std::string> files_to_delete;
+
+  // 遍历数据库下面的所有文件名
   for (std::string& filename : filenames) {
+
     if (ParseFileName(filename, &number, &type)) {
       bool keep = true;
+
       switch (type) {
-        case kLogFile:
-          keep = ((number >= versions_->LogNumber()) ||
-                  (number == versions_->PrevLogNumber()));
+        case kLogFile:   // WAL
+          // 如果 WAL 日志是当前VERSION的日志文件
+          // 或者 WAL 日志是上一个VERSION的日志文件
+          // 则继续保持
+          keep = ((number >= versions_->LogNumber()) || (number == versions_->PrevLogNumber()));
           break;
         case kDescriptorFile:
-          // Keep my manifest file, and any newer incarnations'
-          // (in case there is a race that allows other incarnations)
+          // 如果WAL日志文件是当前VERSION的MENIFEST
+          // 则继续保持
           keep = (number >= versions_->ManifestFileNumber());
           break;
         case kTableFile:
+          // 如果在VersionSet所有的版本中有存在这个SST, 则不删除
+          // 用于回滚?
           keep = (live.find(number) != live.end());
           break;
         case kTempFile:
@@ -269,20 +283,21 @@ void DBImpl::RemoveObsoleteFiles() {
       }
 
       if (!keep) {
+
+        // 放入删除的SST中
         files_to_delete.push_back(std::move(filename));
         if (type == kTableFile) {
+          // 从TableCache中释放这个缓存(如果存在于缓存的话)
           table_cache_->Evict(number);
         }
-        Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type),
-            static_cast<unsigned long long>(number));
+
+        Log(options_.info_log, "Delete type=%d #%lld\n", static_cast<int>(type), static_cast<unsigned long long>(number));
       }
     }
   }
 
-  // While deleting all files unblock other threads. All files being deleted
-  // have unique names which will not collide with newly created files and
-  // are therefore safe to delete while allowing other threads to proceed.
   mutex_.Unlock();
+  // 对于要删除的文件，进行物理删除
   for (const std::string& filename : files_to_delete) {
     env_->RemoveFile(dbname_ + "/" + filename);
   }
@@ -503,7 +518,10 @@ Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
 }
 
 /***
- * IMemTable写到level0层sst
+ * IMemTable写到level0层SST
+ * 过程就是调用基于MemTable迭代器，使用TableBuild构建SST，
+ * 然后计算得到合适的level
+ * 将新的SST变更填充到VersionEdit中
  *
  * @param mem  要被刷盘的 SST
  * @param edit 用于记录基于当前版本的变更项
@@ -568,6 +586,17 @@ Status DBImpl::WriteLevel0Table(MemTable* mem, VersionEdit* edit,
   return s;
 }
 
+/****
+ * 主要功能是 IMemTable 刷盘操作
+ *
+ * 首先对于要刷盘的MemTable, 调用WriteLevel0Table进行构造SST刷盘
+ *    - 这里注意的是不一定会溢写到level0层
+ *    - 他会争取写到更高层，在条件允许的情况下
+ *    - 将新增SST的记录填充到VersionEdit
+ *
+ * 然后基于新的VersionEdit合并形成新的Version
+ * 最后对历史数据做出清理动作
+ */
 void DBImpl::CompactMemTable() {
   mutex_.AssertHeld();
 
@@ -598,7 +627,7 @@ void DBImpl::CompactMemTable() {
     imm_->Unref();
     imm_ = nullptr;
     has_imm_.store(false, std::memory_order_release);
-    RemoveObsoleteFiles();  // 未完待续。。。。。
+    RemoveObsoleteFiles();    // 清理那些无用的本地文件
 
   } else {
     RecordBackgroundError(s);
@@ -681,6 +710,7 @@ void DBImpl::RecordBackgroundError(const Status& s) {
   mutex_.AssertHeld();
   if (bg_error_.ok()) {
     bg_error_ = s;
+    // 唤醒等待线程
     background_work_finished_signal_.SignalAll();
   }
 }
@@ -699,8 +729,7 @@ void DBImpl:: MaybeScheduleCompaction() {
 
   } else if (!bg_error_.ok()) {
     // Already got an error; no more changes
-  } else if (imm_ == nullptr && manual_compaction_ == nullptr &&
-             !versions_->NeedsCompaction()) {
+  } else if (imm_ == nullptr && manual_compaction_ == nullptr && !versions_->NeedsCompaction()) {
     // 没有需要刷写的 IMemTable
   } else {
     background_compaction_scheduled_ = true;
@@ -736,31 +765,43 @@ void DBImpl::BackgroundCall() {
   background_work_finished_signal_.SignalAll();
 }
 
+/****
+ *
+ */
 void DBImpl::BackgroundCompaction() {
   mutex_.AssertHeld();
 
-  // IMemTable刷盘
+  // IMemTable刷盘 -------------  Minor Compaction
   if (imm_ != nullptr) {
     CompactMemTable();
     return;
   }
 
+
+  // Major Compaction
+
   Compaction* c;
-  bool is_manual = (manual_compaction_ != nullptr);
+  bool is_manual = (manual_compaction_ != nullptr);  // 存在压缩行为
   InternalKey manual_end;
+
   if (is_manual) {
     ManualCompaction* m = manual_compaction_;
+
+    // 计算影响到的压缩的SST(对于level层与level+1层)
     c = versions_->CompactRange(m->level, m->begin, m->end);
+
     m->done = (c == nullptr);
     if (c != nullptr) {
-      manual_end = c->input(0, c->num_input_files(0) - 1)->largest;
+      manual_end = c->input(0, c->num_input_files(0) - 1)->largest;   // inputs_0 层最后一个SST的最大key
     }
+
     Log(options_.info_log,
         "Manual compaction at level-%d from %s .. %s; will stop at %s\n",
         m->level, (m->begin ? m->begin->DebugString().c_str() : "(begin)"),
         (m->end ? m->end->DebugString().c_str() : "(end)"),
         (m->done ? "(end)" : manual_end.DebugString().c_str()));
   } else {
+    // 基于指标性触发
     c = versions_->PickCompaction();
   }
 

@@ -78,10 +78,10 @@ class DBImpl : public DB {
 
   // Information for a manual compaction
   struct ManualCompaction {
-    int level;
+    int level;                 // 要压缩的 level
     bool done;
-    const InternalKey* begin;  // null means beginning of key range
-    const InternalKey* end;    // null means end of key range
+    const InternalKey* begin;  // 压缩的开始key
+    const InternalKey* end;    // 压缩的结束key
     InternalKey tmp_storage;   // Used to keep track of compaction progress
   };
 

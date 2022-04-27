@@ -40,17 +40,7 @@ void test_search();
 
 int main(int argc, char*argv[]){
 
-//  std::string a1("a");
-//  std::string a2("b");
-//
-//  std::cout << std::memcmp(a1.c_str(), a2.c_str(), 1) << std::endl;
-//
-//  std::cout << a1.compare(a2) <<std::endl;
-
-  leveldb::Slice a("a");
-  leveldb::Slice b("b");
-
-  std::cout << a.compare(b) <<std::endl;
+  test_leveldb_normal();
 
   return 0;
 }

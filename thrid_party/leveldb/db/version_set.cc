@@ -656,9 +656,9 @@ bool Version::OverlapInLevel(int level, const Slice* smallest_user_key, const Sl
  *
  * PickLevelForMemTableOutput 函数作用就是判断最多能将sst送到第几层,它的原则是:
  *
- * 1. 如果落地的SST的key的范围与level-0层SST范围有重叠， 则数据落地到level-0层
- * 2. 如果跟level+1层数据有重叠，则数据放弃向level+1层落地， 最终落地到level层
- * 3. 如果跟level+2层重叠的所有SST总文件大小超过20M, 则数据放弃向level+1层落地， 最终落地到level层
+ * 1. 如果落地的SST的key的范围与level-0层SST范围有重叠， 则数据落地到level-0层(防止新旧数据版本查询不一致)
+ * 2. 如果跟level+1层数据有重叠，则数据放弃向level+1层落地(因为不能发生merge操作)， 最终落地到level层
+ * 3. 如果跟level+2层重叠的所有SST总文件大小超过20M(防止后期merge代价太大), 则数据放弃向level+1层落地，最终落地到level层
  * 4. level不能超过 2
  *
  * @param smallest_user_key   要写出的sst的最小值
@@ -1479,13 +1479,19 @@ uint64_t VersionSet::ApproximateOffsetOf(Version* v, const InternalKey& ikey) {
  * @param live
  */
 void VersionSet::AddLiveFiles(std::set<uint64_t>* live) {
-  for (Version* v = dummy_versions_.next_; v != &dummy_versions_;
-       v = v->next_) {
+
+  // 遍历所有版本的双向链表
+  for (Version* v = dummy_versions_.next_; v != &dummy_versions_; v = v->next_) {
+
+    // 遍历每个版本的level
     for (int level = 0; level < config::kNumLevels; level++) {
+
       const std::vector<FileMetaData*>& files = v->files_[level];
+      // 遍历每个level的所有文件
       for (size_t i = 0; i < files.size(); i++) {
         live->insert(files[i]->number);
       }
+
     }
   }
 }
@@ -1804,8 +1810,7 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   const int level = c->level();     // 记录要压缩的层
   InternalKey smallest, largest;
 
-  // 处理 level 层的临界值，
-  // 因为随着压缩，同一个 user key 可能处于两个sst
+  // 解决 inputs_[0] 层的SST中临界key的问题
   AddBoundaryInputs(icmp_, current_->files_[level], &c->inputs_[0]);
 
 
@@ -1819,12 +1824,12 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
   InternalKey all_start, all_limit;
   GetRange2(c->inputs_[0], c->inputs_[1], &all_start, &all_limit);
 
+  // inputs_1 非空情况下(空可能是因为这个sst与level+2层重叠的文件超过2M)
   if (!c->inputs_[1].empty()) {
     std::vector<FileMetaData*> expanded0;
     // 基于level层与level+1层的所有合并的sst的user_key的上下限
     // 重新查找level层的sst，想将更多的sst加入到合并列中
     current_->GetOverlappingInputs(level, &all_start, &all_limit, &expanded0);
-    // 将边缘 user_key 一同处理
     AddBoundaryInputs(icmp_, current_->files_[level], &expanded0);
 
     const int64_t inputs0_size = TotalFileSize(c->inputs_[0]);  // 拿到level层合并的sst的文件量
@@ -1862,7 +1867,8 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
     }
   }
 
-  // 将 level+2 层的这个压缩key对应的sst范围加入到 c->grandparents_
+  // 表示这次压缩设计到的key的范围，
+  // 对于level+2层覆盖的SST的范围
   if (level + 2 < config::kNumLevels) {
     current_->GetOverlappingInputs(level + 2, &all_start, &all_limit, &c->grandparents_);
   }
@@ -1870,12 +1876,11 @@ void VersionSet::SetupOtherInputs(Compaction* c) {
 
   // 当前level层记录压缩的last_userkey
   compact_pointer_[level] = largest.Encode().ToString();
-
   c->edit_.SetCompactPointer(level, largest);
 }
 
 /****
- * 用于手动触发压缩
+ * 基于level与key的范围，计算出压缩范围
  *
  * @param level 设置用于压缩的level
  * @param begin 用于压缩的起始的 key
@@ -1886,6 +1891,7 @@ Compaction* VersionSet::CompactRange(int level,
                                      const InternalKey* end) {
 
   // 基于要压缩的level与key的范围定位到sst
+  // 将所有将要被压缩的level0层文件放入到inputs_
   std::vector<FileMetaData*> inputs;
   current_->GetOverlappingInputs(level, begin, end, &inputs);
 
@@ -1893,29 +1899,28 @@ Compaction* VersionSet::CompactRange(int level,
     return nullptr;
   }
 
-  // 需要避免再一次操作中要参与压缩的文件太多
-  // 所以在 level+1 层，我们将合并的文件字节数不能太大
-  // 但是针对第0层我们不会处理，因为第0层文件之间允许它重复，所以会选择很多个
-  if (level > 0) {
+  // 如果level>0层，我们可能会适当减少SST
+  // 使得要压缩的文件总量不超过2M
+  // 因为level>0层的情况下文件是有序的， 所以允许缩减
 
+  if (level > 0) {
     // limit == 2M
-    const uint64_t limit = MaxFileSizeForLevel(options_, level);  // 计算最大的文件限制
+    const uint64_t limit = MaxFileSizeForLevel(options_, level);  // 计算最大的文件限制(2M)
 
     uint64_t total = 0;
 
     // 限制压缩的文件大小，总数不能超过2m
     for (size_t i = 0; i < inputs.size(); i++) {
-
       uint64_t s = inputs[i]->file_size;
-
       total += s;
       if (total >= limit) {
-        inputs.resize(i + 1);
+        inputs.resize(i + 1); // 如果超过2M, 则抛掉后面的SST
         break;
       }
     }
   }
 
+  // 构建Level0层压缩
   Compaction* c = new Compaction(options_, level);
   c->input_version_ = current_;
   c->input_version_->Ref();
