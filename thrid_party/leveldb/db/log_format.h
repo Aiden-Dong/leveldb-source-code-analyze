@@ -8,18 +8,19 @@
 #ifndef STORAGE_LEVELDB_DB_LOG_FORMAT_H_
 #define STORAGE_LEVELDB_DB_LOG_FORMAT_H_
 
-/****
- * WAL 日志 :
- * Record 格式 :
- *    CRC(4个字节)  | length(2个字节) | recordtype(1个字节) | value
+/******
+ * 基于Block的文件维护方式
+ * 用于 : WAL, MANIFEST
  *
- *    record :=
- *          checksum : uint32
- *          length   : uint16
- *          type     : uint8
- *          data     : uint8[length]
+ * 文件的格式 : | BLOCK | BLOCK | BLOCK | BLOCK | BLOCK | BLOCK | BLOCK |
+ *    Block 大小 : 32KB
  *
+ * 每个BLOCK可能会有一到多条RECORD, RECORD的数据大小随机
+ * 用户提交的写入数据在这里会争取落在一个Block中，用一个Record.
+ * 如果数据太大或者Block的剩余空间不足，不能一次性将一条记录写在一个Block中。
+ * 那么记录将被拆分成多个Record写在多个Block中。
  *
+ * Record 格式 : | CRC(4个字节)  | length(2个字节) | recordtype(1个字节) | value(length个字节) |
  */
 namespace leveldb {
 namespace log {

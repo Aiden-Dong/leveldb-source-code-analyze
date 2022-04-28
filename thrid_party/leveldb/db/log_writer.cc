@@ -35,21 +35,28 @@ Writer::Writer(WritableFile* dest, uint64_t dest_length)
 
 Writer::~Writer() = default;
 
+/***
+ * 将上游提供的数据(slice)写入到Block中， 可能这个过程写入多个Block。
+ *
+ * 写入过程 :
+ *   1. 根据要写入的数据，计算一次性写入Block需要的空间(slice.size() + 7(首部大小))
+ *   2. 找到当前在写的Block, 计算Block的剩余空间(kBlockSize - block_offset_)
+ *   3. 如果剩余空间不足写一个首部, 则将Block剩余空间填充为0，重新开一个新的Block写入数据
+ *   4. 根据要写入Block剩余空间与当前的数据量，如果一个Block无法存放整个数据，则将数据拆分成多个部分写入多个Block.
+ *
+ * @param slice 上游提供的要写入Block中的数据
+ */
 Status Writer::AddRecord(const Slice& slice) {
 
   const char* ptr = slice.data(); // 数据体指针
   size_t left = slice.size();     // 数据体大小
 
-  // Fragment the record if necessary and emit it.  Note that if slice
-  // is empty, we still want to iterate once to emit a single
-  // zero-length record
   Status s;
   bool begin = true;
 
   do {
 
     const int leftover = kBlockSize - block_offset_;  // 计算剩余空间
-
     assert(leftover >= 0);
 
     if (leftover < kHeaderSize) {
@@ -103,9 +110,9 @@ Status Writer::AddRecord(const Slice& slice) {
 }
 
 /***
- *  Record 格式 :
- *    CRC(4个字节)  | length(2个字节) | recordtype(1个字节) | valueh
- * @return
+ * 将数据(来自上游提交的部分或者整体数据),根据Block协议封装成一个数据帧(Record)写入到Block中
+ *
+ * 数据帧(Record)格式: | CRC(4个字节)  | length(2个字节) | recordtype(1个字节) | value(length个字节) |
  */
 Status Writer::EmitPhysicalRecord(RecordType t, const char* ptr,size_t length) {
 
