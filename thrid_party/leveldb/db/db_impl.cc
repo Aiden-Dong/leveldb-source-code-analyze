@@ -201,13 +201,6 @@ Status DBImpl::NewDB() {
 
   // 创建一个新的VersionEdit
   VersionEdit new_db;
-<<<<<<< HEAD
-=======
-  new_db.SetComparatorName(user_comparator()->Name());
-  new_db.SetLogNumber(0);                                 // 日志文件编号
-  new_db.SetNextFile(2);                                  // 下一个文件编号
-  new_db.SetLastSequence(0);
->>>>>>> c40d24552cdc7937c1d6af142fc9331699e07f54
 
   new_db.SetComparatorName(user_comparator()->Name());  // 设置比较器名称
   new_db.SetLogNumber(0);                                // 设置WAL日志文件编号-0
@@ -359,51 +352,35 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
 
   assert(db_lock_ == nullptr);
 
-<<<<<<< HEAD
   Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);  // 创建文件锁
-=======
-  Status s = env_->LockFile(LockFileName(dbname_), &db_lock_);
->>>>>>> c40d24552cdc7937c1d6af142fc9331699e07f54
 
   if (!s.ok()) {
     return s;
   }
 
   if (!env_->FileExists(CurrentFileName(dbname_))) {
-<<<<<<< HEAD
-    // 如果 CURRENT 文件不存在， 表示新服务，没有MANIFEST 文件
 
+    // 如果 CURRENT 文件不存在， 表示新服务，没有MANIFEST 文件
     if (options_.create_if_missing) {
       // 创建新的DB
       Log(options_.info_log, "Creating DB %s since it was missing.", dbname_.c_str());
-=======
 
-    if (options_.create_if_missing) {
-
-      Log(options_.info_log, "Creating DB %s since it was missing.", dbname_.c_str());
-
-      // 创建新的VersionEdit与MANIFEST文件
->>>>>>> c40d24552cdc7937c1d6af142fc9331699e07f54
       s = NewDB();
 
       if (!s.ok()) {
         return s;
       }
     } else {
-<<<<<<< HEAD
-      return Status::InvalidArgument( dbname_, "does not exist (create_if_missing is false)");
-=======
+
       return Status::InvalidArgument(dbname_, "does not exist (create_if_missing is false)");
->>>>>>> c40d24552cdc7937c1d6af142fc9331699e07f54
+
     }
 
   } else {
     if (options_.error_if_exists) {
-<<<<<<< HEAD
-      return Status::InvalidArgument(dbname_, "exists (error_if_exists is true)");
-=======
+
       return Status::InvalidArgument(dbname_,"exists (error_if_exists is true)");
->>>>>>> c40d24552cdc7937c1d6af142fc9331699e07f54
+
     }
   }
 
