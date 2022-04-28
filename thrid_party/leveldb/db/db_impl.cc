@@ -39,23 +39,22 @@ namespace leveldb {
 
 const int kNumNonTableCacheFiles = 10;
 
-// Information kept for every waiting writer
+// 用于压缩的数据结构
 struct DBImpl::Writer {
   explicit Writer(port::Mutex* mu)
       : batch(nullptr), sync(false), done(false), cv(mu) {}
 
-  Status status;
-  WriteBatch* batch;
-  bool sync;
-  bool done;
-  port::CondVar cv;
+  Status status;      // 操作状态
+  WriteBatch* batch;  // 压缩批次
+  bool sync;          // 同步状态
+  bool done;          // 是否完成
+  port::CondVar cv;   // 同步
 };
 
 /****
  * 用于记录压缩过程信息
  */
 struct DBImpl::CompactionState {
-  // Files produced by compaction
 
   //输出文件
   struct Output {
@@ -1430,7 +1429,14 @@ Status DBImpl::Delete(const WriteOptions& options, const Slice& key) {
   return DB::Delete(options, key);
 }
 
+/***
+ * 数据写入到
+ * @param options
+ * @param updates
+ * @return
+ */
 Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
+
   Writer w(&mutex_);
 
   w.batch = updates;
@@ -1439,21 +1445,31 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
 
   MutexLock l(&mutex_);
   writers_.push_back(&w);
+
   while (!w.done && &w != writers_.front()) {
     w.cv.Wait();
   }
+
   if (w.done) {
     return w.status;
   }
 
-  // May temporarily unlock and wait.
+  // 进行压缩尝试
   Status status = MakeRoomForWrite(updates == nullptr);
+
+  // 拿到上一次的最大的序列号
   uint64_t last_sequence = versions_->LastSequence();
+
   Writer* last_writer = &w;
+
   if (status.ok() && updates != nullptr) {  // nullptr batch is for compactions
+
+    // 合并这次写入的batch
     WriteBatch* write_batch = BuildBatchGroup(&last_writer);
+
+    //设置序列号
     WriteBatchInternal::SetSequence(write_batch, last_sequence + 1);
-    last_sequence += WriteBatchInternal::Count(write_batch);
+    last_sequence += WriteBatchInternal::Count(write_batch);  // 序列号要增加entry个数个值
 
     // Add to log and apply to memtable.  We can release the lock
     // during this phase since &w is currently responsible for logging
@@ -1461,15 +1477,22 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     // into mem_.
     {
       mutex_.Unlock();
-      status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));
+
+      // 数据落地之前首先写WAL
+
+      // WAL中记录的是WriteBatch
+      status = log_->AddRecord(WriteBatchInternal::Contents(write_batch));  // 记录日志
+
       bool sync_error = false;
+
       if (status.ok() && options.sync) {
-        status = logfile_->Sync();
+        status = logfile_->Sync();   // 刷盘
         if (!status.ok()) {
           sync_error = true;
         }
       }
       if (status.ok()) {
+        // 然后插入到 MemTable中
         status = WriteBatchInternal::InsertInto(write_batch, mem_);
       }
       mutex_.Lock();
@@ -1482,7 +1505,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
     }
     if (write_batch == tmp_batch_) tmp_batch_->Clear();
 
-    versions_->SetLastSequence(last_sequence);
+    versions_->SetLastSequence(last_sequence);  // 更新序列号
   }
 
   while (true) {
@@ -1506,26 +1529,28 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
 
 // REQUIRES: Writer list must be non-empty
 // REQUIRES: First writer must have a non-null batch
+// 合并相同类型的 WriteBatch
 WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
+
   mutex_.AssertHeld();
   assert(!writers_.empty());
   Writer* first = writers_.front();
   WriteBatch* result = first->batch;
+
   assert(result != nullptr);
 
   size_t size = WriteBatchInternal::ByteSize(first->batch);
 
-  // Allow the group to grow up to a maximum size, but if the
-  // original write is small, limit the growth so we do not slow
-  // down the small write too much.
-  size_t max_size = 1 << 20;
-  if (size <= (128 << 10)) {
+  size_t max_size = 1 << 20;             // 最大 2M
+
+  if (size <= (128 << 10)) {             // 如果size 没有超过 128KB, 则还可以允许添加128KB
     max_size = size + (128 << 10);
   }
 
   *last_writer = first;
   std::deque<Writer*>::iterator iter = writers_.begin();
   ++iter;  // Advance past "first"
+
   for (; iter != writers_.end(); ++iter) {
     Writer* w = *iter;
     if (w->sync && !first->sync) {
