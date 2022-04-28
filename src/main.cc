@@ -1,9 +1,19 @@
 #include "leveldb/db.h"
 #include "db/skiplist.h"
 #include "util/arena.h"
+#include "leveldb/env.h"
 #include "leveldb/write_batch.h"
+#include "db/log_reader.h"
 #include <iostream>
 #include <string>
+#include <db/version_edit.h>
+
+struct LogReporter : public leveldb::log::Reader::Reporter {
+  leveldb::Status* status;
+  void Corruption(size_t bytes, const leveldb::Status& s) override {
+    if (this->status->ok()) *this->status = s;
+  }
+};
 
 typedef uint64_t Key;
 struct Comparator {
@@ -37,15 +47,44 @@ void test_bytes();
 // 测试二分查找法
 void test_search();
 
+void show_manifest_file(std::string fliename);
+
 
 int main(int argc, char*argv[]){
 
 //  test_leveldb_normal();
-
-  std::cout << (4 << 20) << std::endl;
-
+  show_manifest_file("./testdb.ldb/MANIFEST-000002");
 
   return 0;
+}
+
+
+
+void show_manifest_file(std::string fliename){
+
+  leveldb::Env * env = leveldb::Env::Default();
+
+  leveldb::SequentialFile *sequentialFile;
+
+  env->NewSequentialFile(fliename, &sequentialFile);
+
+
+
+  leveldb::Status s;
+  LogReporter reporter;
+  reporter.status = &s;
+  leveldb::Slice record;
+  std::string scratch;
+
+  leveldb::log::Reader reader(sequentialFile, &reporter, true /*checksum*/,0 /*initial_offset*/);
+
+  while (reader.ReadRecord(&record, &scratch) && s.ok()) {
+    leveldb::VersionEdit edit;
+    s = edit.DecodeFrom(record);
+    if(s.ok()) std::cout << edit.DebugString() << std::endl;
+  }
+
+
 }
 
 void test_leveldb_normal(){

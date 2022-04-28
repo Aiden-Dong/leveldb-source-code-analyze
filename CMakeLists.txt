@@ -6,11 +6,16 @@ project(leveldb_study)
 
 aux_source_directory(src SRC_LIST)
 
+#aux_source_directory(thrid_party/leveldb/db LEVELDB_DB)
+
 add_subdirectory("thrid_party/leveldb")
 
-add_executable(leveldb_study ${SRC_LIST})
 
 include_directories("${CMAKE_SOURCE_DIR}/thrid_party/leveldb")
+#include_directories("${CMAKE_SOURCE_DIR}/thrid_party/leveldb/port")
+
+add_executable(leveldb_study ${SRC_LIST} ${LEVELDB_DB} thrid_party/leveldb/db/log_reader.cc)
+
 
 enable_testing()
 # leveldb

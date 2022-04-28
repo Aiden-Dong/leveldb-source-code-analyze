@@ -288,6 +288,7 @@ class PosixWritableFile final : public WritableFile {
     // 将数据添加到缓冲区
     size_t copy_size = std::min(write_size, kWritableFileBufferSize - pos_);
     std::memcpy(buf_ + pos_, write_data, copy_size);
+
     write_data += copy_size;
     write_size -= copy_size;
     pos_ += copy_size;
