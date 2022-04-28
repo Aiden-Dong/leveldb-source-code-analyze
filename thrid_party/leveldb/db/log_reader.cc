@@ -53,8 +53,10 @@ bool Reader::SkipToInitialBlock() {
 }
 
 /***
- *
  * 读取一条有效的记录
+ *
+ * @param record 用于返回的记录
+ * @param scratch 辅助record 用于提供拼接record功能
  */
 bool Reader::ReadRecord(Slice* record, std::string* scratch) {
 
@@ -72,6 +74,7 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
   // 0 is a dummy value to make compilers happy
   uint64_t prospective_record_offset = 0;
 
+  // 用于临时存放Record
   Slice fragment;
 
   while (true) {
@@ -96,9 +99,10 @@ bool Reader::ReadRecord(Slice* record, std::string* scratch) {
     }
 
     switch (record_type) {
-      case kFullType:
-        if (in_fragmented_record) {
 
+      case kFullType:
+
+        if (in_fragmented_record) {
           if (!scratch->empty()) {
             ReportCorruption(scratch->size(), "partial record without end(1)");
           }
@@ -186,13 +190,18 @@ void Reader::ReportDrop(uint64_t bytes, const Status& reason) {
 }
 
 /***
- * 从 block 中读取一个 record
+ * 功能 : 从 Block 中读取一个 Record
+ *
+ * 这里采用了缓存的机制，文件IO会每次读取一个完整的Block放到缓存中.
+ * 每次给上游返回一个Record
+ * 当缓存没有Record时，在从磁盘读取一个Block ...
+ *
  * @param result 返回 record 数据体
  * @return 返回 record type
  */
 unsigned int Reader::ReadPhysicalRecord(Slice* result) {
-  while (true) {
 
+  while (true) {
     if (buffer_.size() < kHeaderSize) { // buffer 中没有一个完成的数据块
       if (!eof_) {                      // 文件是否读取到最后的标识
         buffer_.clear();
@@ -200,7 +209,9 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
         // 一次性读取一个完整的 block
         Status status = file_->Read(kBlockSize, &buffer_, backing_store_);
 
-        end_of_buffer_offset_ += buffer_.size();  // 设置 buffer 的大小
+        // 记录当前从文件读的位置
+        end_of_buffer_offset_ += buffer_.size();
+
         if (!status.ok()) {
           // 数据读取异常
           buffer_.clear();
@@ -212,7 +223,6 @@ unsigned int Reader::ReadPhysicalRecord(Slice* result) {
           // 数据存在问题
           eof_ = true;
         }
-
         continue;
       } else {
         // 文件已经读取到最后，并且没有读取到一个有效的 block

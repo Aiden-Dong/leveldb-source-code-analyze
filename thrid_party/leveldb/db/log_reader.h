@@ -17,9 +17,15 @@ class SequentialFile;
 
 namespace log {
 
+/****
+ * Block文件的读句柄
+ * 基于SequentialFile顺序读取文件方式
+ * 读取Block采用的是缓存机器
+ * 每次可能会读取多个Record, 拼接成一个完整的上层数据记录
+ */
 class Reader {
  public:
-  // Interface for reporting errors.
+  // 失败时的汇报回调
   class Reporter {
    public:
     virtual ~Reporter();
@@ -28,7 +34,6 @@ class Reader {
     // of bytes dropped due to the corruption.
     virtual void Corruption(size_t bytes, const Status& status) = 0;
   };
-
 
   /***
    * 创建一个将从“*file”返回日志记录的 read 工具, 使用read时，“*file”必须保持活动状态。
@@ -43,16 +48,14 @@ class Reader {
 
   ~Reader();
 
-  // Read the next record into *record.  Returns true if read
-  // successfully, false if we hit end of the input.  May use
-  // "*scratch" as temporary storage.  The contents filled in *record
-  // will only be valid until the next mutating operation on this
-  // reader or the next mutation to *scratch.
+  /***
+   * 读取一条有效的记录
+   *
+   * @param record 用于返回的记录
+   * @param scratch 辅助record 用于提供拼接record功能
+   */
   bool ReadRecord(Slice* record, std::string* scratch);
 
-  // Returns the physical offset of the last record returned by ReadRecord.
-  //
-  // Undefined before the first call to ReadRecord.
   uint64_t LastRecordOffset();
 
  private:
@@ -67,11 +70,19 @@ class Reader {
   // Returns true on success. Handles reporting.
   bool SkipToInitialBlock();
 
-  // Return type, or one of the preceding special values
+  /***
+   * 功能 : 从 Block 中读取一个 Record
+   *
+   * 这里采用了缓存的机制，文件IO会每次读取一个完整的Block放到缓存中.
+   * 每次给上游返回一个Record
+   * 当缓存没有Record时，在从磁盘读取一个Block ...
+   *
+   * @param result 返回 record 数据体
+   * @return 返回 record type
+   */
   unsigned int ReadPhysicalRecord(Slice* result);
 
-  // Reports dropped bytes to the reporter.
-  // buffer_ must be updated to remove the dropped bytes prior to invocation.
+
   void ReportCorruption(uint64_t bytes, const char* reason);
   void ReportDrop(uint64_t bytes, const Status& reason);
 
