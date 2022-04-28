@@ -341,7 +341,7 @@ void DBImpl::RemoveObsoleteFiles() {
   mutex_.Lock();
 }
 
-Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
+Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {   // 从 MANIFEST 与WAL中恢复数据
 
   mutex_.AssertHeld();
 
@@ -390,6 +390,8 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   if (!s.ok()) {
     return s;
   }
+
+
   SequenceNumber max_sequence(0);
 
   // Recover from all newer log files than the ones named in the
@@ -399,18 +401,22 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   // Note that PrevLogNumber() is no longer used, but we pay
   // attention to it in case we are recovering a database
   // produced by an older version of leveldb.
-  const uint64_t min_log = versions_->LogNumber();
-  const uint64_t prev_log = versions_->PrevLogNumber();
+  const uint64_t min_log = versions_->LogNumber();       // 0
+  const uint64_t prev_log = versions_->PrevLogNumber();  // 0
+
   std::vector<std::string> filenames;
   s = env_->GetChildren(dbname_, &filenames);
+
   if (!s.ok()) {
     return s;
   }
   std::set<uint64_t> expected;
-  versions_->AddLiveFiles(&expected);
+  versions_->AddLiveFiles(&expected);                   // 获取曾经存活过的SST
+
   uint64_t number;
   FileType type;
   std::vector<uint64_t> logs;
+
   for (size_t i = 0; i < filenames.size(); i++) {
     if (ParseFileName(filenames[i], &number, &type)) {
       expected.erase(number);
@@ -418,18 +424,17 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
         logs.push_back(number);
     }
   }
+
   if (!expected.empty()) {
     char buf[50];
-    std::snprintf(buf, sizeof(buf), "%d missing files; e.g.",
-                  static_cast<int>(expected.size()));
+    std::snprintf(buf, sizeof(buf), "%d missing files; e.g.", static_cast<int>(expected.size()));
     return Status::Corruption(buf, TableFileName(dbname_, *(expected.begin())));
   }
 
   // Recover in the order in which the logs were generated
   std::sort(logs.begin(), logs.end());
   for (size_t i = 0; i < logs.size(); i++) {
-    s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit,
-                       &max_sequence);
+    s = RecoverLogFile(logs[i], (i == logs.size() - 1), save_manifest, edit, &max_sequence);
     if (!s.ok()) {
       return s;
     }
@@ -447,7 +452,7 @@ Status DBImpl::Recover(VersionEdit* edit, bool* save_manifest) {
   return Status::OK();
 }
 
-Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,
+Status DBImpl::RecoverLogFile(uint64_t log_number, bool last_log,          // 从WAL日志中恢复数据
                               bool* save_manifest, VersionEdit* edit,
                               SequenceNumber* max_sequence) {
   struct LogReporter : public log::Reader::Reporter {
@@ -1751,8 +1756,8 @@ Status DB::Open(const Options& options, const std::string& dbname, DB** dbptr) {
       edit.SetLogNumber(new_log_number);
       impl->logfile_ = lfile;
       impl->logfile_number_ = new_log_number;
-      impl->log_ = new log::Writer(lfile);
-      impl->mem_ = new MemTable(impl->internal_comparator_);
+      impl->log_ = new log::Writer(lfile);    // 创建 WAL 日志文件
+      impl->mem_ = new MemTable(impl->internal_comparator_);  // 创建 MemTable 文件
       impl->mem_->Ref();
     }
   }

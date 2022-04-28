@@ -52,8 +52,8 @@ void show_manifest_file(std::string fliename);
 
 int main(int argc, char*argv[]){
 
-//  test_leveldb_normal();
-  show_manifest_file("./testdb.ldb/MANIFEST-000002");
+  test_leveldb_normal();
+//  show_manifest_file("./testdb.ldb/MANIFEST-000002");
 
   return 0;
 }
@@ -92,7 +92,7 @@ void test_leveldb_normal(){
     leveldb::Options options;
     options.create_if_missing = true;
 
-    const std::string db_path = "./testdb.ldb";
+    const std::string db_path = "./testdb.db";
     const std::string key = "testkey";
     const std::string value = "hello leveldb";
 
