@@ -1349,11 +1349,11 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key, std::string* va
   Status s;
   MutexLock l(&mutex_);
   SequenceNumber snapshot;
+
   if (options.snapshot != nullptr) {
-    snapshot =
-        static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();
+    snapshot = static_cast<const SnapshotImpl*>(options.snapshot)->sequence_number();   // 读取那个版本的
   } else {
-    snapshot = versions_->LastSequence();
+    snapshot = versions_->LastSequence(); // 获取最后一个版本（比较的时候，版本越大，值越小）
   }
 
   MemTable* mem = mem_;

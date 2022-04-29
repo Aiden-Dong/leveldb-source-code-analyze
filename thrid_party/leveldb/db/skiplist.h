@@ -271,9 +271,9 @@ SkipList<Key, Comparator>::FindGreaterOrEqual(const Key& key, Node** prev) const
 
   // 从头部开始遍历
   Node* x = head_;
-  int level = GetMaxHeight() - 1;
+  int level = GetMaxHeight() - 1;     // 从最高级开始查找
   while (true) {
-    Node* next = x->Next(level);
+    Node* next = x->Next(level);      // 拿到下一个节点
 
     if (KeyIsAfterNode(key, next)) {   // 判断 key 是否是next 对应的下一个节点
       x = next;
@@ -355,13 +355,14 @@ SkipList<Key, Comparator>::SkipList(Comparator cmp, Arena* arena)
 // 填充一个元素到跳表结构中
 template <typename Key, class Comparator>
 void SkipList<Key, Comparator>::Insert(const Key& key) {
+
   // TODO(opt): We can use a barrier-free variant of FindGreaterOrEqual()
   // here since Insert() is externally synchronized.
   
-  Node* prev[kMaxHeight];  // pre 是一个未初始化的指针
+  Node* prev[kMaxHeight];  // pre 是一个未初始化的指针数组
 
-  // prev 的 每个level指针指向对应级的下一个大于等于key的node节点
-  // node x 返回大于等于key的第一个node节点
+  // prev的每个level指针指向对应级的下一个大于等于key的node节点
+  // nodex返回大于等于key的第一个node节点
   Node* x = FindGreaterOrEqual(key, prev);
 
   // Our data structure does not allow duplicate insertion

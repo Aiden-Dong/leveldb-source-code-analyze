@@ -108,12 +108,19 @@ void test_leveldb_normal(){
 
     std::cout << "open leveldb success" << std::endl;
 
-    // 写入数据
-    status = ldbptr->Put(leveldb::WriteOptions(), key, value);
+//    // 写入数据
+//    status = ldbptr->Put(leveldb::WriteOptions(), "testkey", "hello1");
+//
+//    if(!status.ok()){
+//        std::cerr << "write data error" << std::endl;
+//    }
+//
+//  status = ldbptr->Put(leveldb::WriteOptions(), "testkey", "hello2");
 
-    if(!status.ok()){
-        std::cerr << "write data error" << std::endl;
-    }
+  if(!status.ok()){
+    std::cerr << "write data error" << std::endl;
+  }
+
 
     std::cout << "write data success" << std::endl;
 

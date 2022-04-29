@@ -154,7 +154,7 @@ namespace {
 /***
  * 将数据填充到 MemTable 中
  */
-class MemTableInserter : public WriteBatch::Handler {
+class  MemTableInserter : public WriteBatch::Handler {
  public:
   SequenceNumber sequence_;
   MemTable* mem_;

@@ -250,11 +250,11 @@ inline bool ParseInternalKey(const Slice& internal_key, ParsedInternalKey* resul
   return (c <= static_cast<uint8_t>(kTypeValue));
 }
 
-/***
- * data :
- *      - user_data_size + seqNum size
- *      - user_data
- *      - seqNum
+/****
+ * Key的封装结构 :
+ *   | 总的数据长度 | user_key 数据体 | seqnumber |
+ *   |            |                             |
+ *  start_       kstart_                       end_
  */
 class LookupKey {
  public:
@@ -297,9 +297,9 @@ class LookupKey {
   //                                    <-- end_
   // The array is a suitable MemTable key.
   // The suffix starting with "userkey" can be used as an InternalKey.
-  const char* start_;
-  const char* kstart_;
-  const char* end_;
+  const char* start_;     // 数据体的起始位置
+  const char* kstart_;    // user_key 的起始位置
+  const char* end_;       // 数据体的结束位置
   char space_[200];  // 如果空间占用不高，就栈上分配
 };
 

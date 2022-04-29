@@ -49,6 +49,7 @@ class DBImpl : public DB {
    * 6. MaybeScheduleCompation
    */
   Status Get(const ReadOptions& options, const Slice& key, std::string* value) override;
+
   Iterator* NewIterator(const ReadOptions&) override;
   const Snapshot* GetSnapshot() override;
   void ReleaseSnapshot(const Snapshot* snapshot) override;
