@@ -22,11 +22,7 @@ class MemTableIterator;
  */
 class MemTable {
  public:
-
-  /***
-   * Memtable 构造器
-   * @param comparator
-   */
+  // 构造器
   explicit MemTable(const InternalKeyComparator& comparator);
 
   MemTable(const MemTable&) = delete;
@@ -45,18 +41,11 @@ class MemTable {
     }
   }
 
-  // Returns an estimate of the number of bytes of data in use by this
-  // data structure. It is safe to call when MemTable is being modified.
+  // 返回容量大小
   size_t ApproximateMemoryUsage();
 
-  // Return an iterator that yields the contents of the memtable.
-  //
-  // The caller must ensure that the underlying MemTable remains live
-  // while the returned iterator is live.  The keys returned by this
-  // iterator are internal keys encoded by AppendInternalKey in the
-  // db/format.{h,cc} module.
+  // 返回迭代器
   Iterator* NewIterator();
-
 
   /***
    * 添加一个 kv 数据到 memtable 中
@@ -67,10 +56,7 @@ class MemTable {
    */
   void Add(SequenceNumber seq, ValueType type, const Slice& key, const Slice& value);
 
-  // If memtable contains a value for key, store it in *value and return true.
-  // If memtable contains a deletion for key, store a NotFound() error
-  // in *status and return true.
-  // Else, return false.
+  // 从MemTable中查询数据
   bool Get(const LookupKey& key, std::string* value, Status* s);
 
  private:
@@ -91,14 +77,10 @@ class MemTable {
   int refs_;
   Arena arena_;                // 内存池工具
 
-  //  key_size     : varint32 of internal_key.size()
-  //  key bytes    : char[internal_key.size()]
-  //  tag          : uint64((sequence << 8) | type)
-  //  value_size   : varint32 of value.size()
-  //  value bytes  : char[value.size()]
+  // 跳表结构实现
   Table table_;
 };
 
-}  // namespace leveldb
+}
 
 #endif  // STORAGE_LEVELDB_DB_MEMTABLE_H_

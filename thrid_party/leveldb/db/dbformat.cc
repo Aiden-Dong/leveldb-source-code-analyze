@@ -53,10 +53,6 @@ const char* InternalKeyComparator::Name() const {
  * @return
  */
 int InternalKeyComparator::Compare(const Slice& akey, const Slice& bkey) const {
-  // Order by:
-  //    increasing user key (according to user-supplied comparator)
-  //    decreasing sequence number
-  //    decreasing type (though sequence# should be enough to disambiguate)
 
   // 首先比较 user_key 提升速度
   int r = user_comparator_->Compare(ExtractUserKey(akey), ExtractUserKey(bkey));

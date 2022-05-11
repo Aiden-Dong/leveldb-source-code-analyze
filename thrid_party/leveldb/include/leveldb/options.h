@@ -71,7 +71,7 @@ struct LEVELDB_EXPORT Options {
   // 每个 block 的数据包大小
   // 每个块打包的用户数据的近似大小。请注意，此处指定的块大小对应于未压缩的数据。
   // 如果启用压缩，从磁盘读取的单元的实际大小可能会更小。此参数可以动态更改。
-  size_t block_size = 4 * 1024;
+  size_t block_size = 4 * 1024; // 4KB
 
   // block 中记录完整 key 的间隔
   int block_restart_interval = 16;

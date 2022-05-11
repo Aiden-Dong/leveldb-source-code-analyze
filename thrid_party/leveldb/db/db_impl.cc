@@ -1492,7 +1492,7 @@ Status DBImpl::Write(const WriteOptions& options, WriteBatch* updates) {
         }
       }
       if (status.ok()) {
-        // 然后插入到 MemTable中
+        // 然后插入到 MemTable中BlockBuilder
         status = WriteBatchInternal::InsertInto(write_batch, mem_);
       }
       mutex_.Lock();
@@ -1534,7 +1534,7 @@ WriteBatch* DBImpl::BuildBatchGroup(Writer** last_writer) {
 
   mutex_.AssertHeld();
   assert(!writers_.empty());
-  Writer* first = writers_.front();
+  Writer* first = writers_.front();    // 拿到双端队列的首个函数
   WriteBatch* result = first->batch;
 
   assert(result != nullptr);

@@ -38,6 +38,7 @@ class Slice;
  *  | kTypeDeletion(1字节) | key 长度(变长32位) | key 具体数据 |
  */
 class LEVELDB_EXPORT WriteBatch {
+
  public:
   class LEVELDB_EXPORT Handler {
    public:

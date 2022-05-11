@@ -87,8 +87,8 @@ void PutVarint64(std::string* dst, uint64_t v) {
  * 将 value 的长度与value 填充到dst
  */
 void PutLengthPrefixedSlice(std::string* dst, const Slice& value) {
-  PutVarint32(dst, value.size());  // 填充 value 长度
-  dst->append(value.data(), value.size()); // 填充 value 数据
+  PutVarint32(dst, value.size());           // 填充 value 长度
+  dst->append(value.data(), value.size());  // 填充 value 数据
 }
 
 /**

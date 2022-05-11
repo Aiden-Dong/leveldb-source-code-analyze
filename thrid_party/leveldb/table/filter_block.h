@@ -23,7 +23,7 @@ class FilterPolicy;
 
 /***
  * FilterBlock 也受到 datablock 更新而更新， 当 datablock 开启新的 block 时候，
- * filter block 也会开启新的block(startblock), 当然内部会遵循2kb 一个 filter 来进行构建
+ * 每一个 DataBlock 具有一个BloomFilter
  *
  * 数据结构 :
  *      [filter 0]                     : string
@@ -71,11 +71,11 @@ class FilterBlockBuilder {
   void GenerateFilter();
 
   const FilterPolicy* policy_;              // 过滤策略， 默认是 BloomFilter
-  std::string keys_;                        // Flattened key contents  将所有的key都平铺拼接在一起
+  std::string keys_;                        // 将所有的key都平铺拼接在一起，使用start_ 记录每个key的起始为孩子
   std::vector<size_t> start_;               // Starting index in keys_ of each key  每个 key 的起始点
 
   std::vector<Slice> tmp_keys_;             // 用于计算 Bloom 过滤器的临时存储key
-  std::string result_;                      // Filter data computed so far 存放得到的过滤器结果， 具有多个过滤器
+  std::string result_;                      // 存放得到的过滤器结果， 具有多个过滤器，拼接，使用filter_offsets_记录拼接位置
   std::vector<uint32_t> filter_offsets_;    // 每个过滤器的偏移量
 };
 
@@ -95,10 +95,10 @@ class FilterBlockReader {
 
  private:
   const FilterPolicy* policy_;
-  const char* data_;    // 数据体指针
-  const char* offset_;  // Bloom 过滤器定位点 初始位置指针
-  size_t num_;          // Bloom 过滤器数量
-  size_t base_lg_;      // kFilterBase
+  const char* data_;         // 数据体指针
+  const char* offset_;       // Bloom 过滤器定位点 初始位置指针
+  size_t num_;               // Bloom 过滤器数量
+  size_t base_lg_;           // kFilterBase
 };
 
 }  // namespace leveldb

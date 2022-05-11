@@ -100,37 +100,39 @@ class MemTableIterator : public Iterator {
 Iterator* MemTable::NewIterator() { return new MemTableIterator(&table_); }
 
 /**
- * 将用户提交的的KeyValue插入到MemTable中 :
- *
- * 首先把数据封装成 :
- *   | key_size | key(user_key | seqnum | valueType) | value_size | value |
- *
- * Format of an entry is concatenation of:
- *  key_size     : varint32 of internal_key.size()
- *  key bytes    : char[internal_key.size()]
- *  tag          : uint64((sequence << 8) | type)
- *  value_size   : varint32 of value.size()
- *  value bytes  : char[value.size()]
+ * <pre>
+ *  将用户提交的的KeyValue插入到MemTable中
+ * </pre>
+ * @param s      seqnumber
+ * @param type   ValueType
+ * @param key    UserKey
+ * @param value  value 数据， 对于delete事件， value 为空
  */
 void MemTable::Add(SequenceNumber s, ValueType type, const Slice& key, const Slice& value) {
 
-  size_t key_size = key.size();
-  size_t val_size = value.size();
+  size_t key_size = key.size();            // user_key
+  size_t val_size = value.size();          // value
 
-  size_t internal_key_size = key_size + 8; // 包含 seqnum + valuetype
+  size_t internal_key_size = key_size + 8; // internal_key size
 
-  // 分配内存: key_size | internel_key | value_size | value
+  // 从内存池中分配内存: key_size | internel_key | value_size | value
   const size_t encoded_len = VarintLength(internal_key_size) + internal_key_size + VarintLength(val_size) + val_size;
   char* buf = arena_.Allocate(encoded_len);
 
-  // 写入 key+seqnum 长度
-  char* p = EncodeVarint32(buf, internal_key_size);     // 填充key_size
-  std::memcpy(p, key.data(), key_size);                 // 填充 key
+  // 填充 key_size
+  char* p = EncodeVarint32(buf, internal_key_size);
+
+  // 填充 InternalKey
+  std::memcpy(p, key.data(), key_size);
   p += key_size;
-  EncodeFixed64(p, (s << 8) | type);              // 填充 seqnumber + valueType
+  EncodeFixed64(p, (s << 8) | type);
   p += 8;
 
-  p = EncodeVarint32(p, val_size);                      // value_size
+
+  // 填充 value_size
+  p = EncodeVarint32(p, val_size);
+
+  // 填充 value
   std::memcpy(p, value.data(), val_size);               // value
 
   assert(p + val_size == buf + encoded_len);
