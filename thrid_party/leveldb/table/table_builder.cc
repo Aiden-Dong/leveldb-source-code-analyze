@@ -332,6 +332,7 @@ Status TableBuilder::Finish() {
     WriteBlock(&meta_index_block, &metaindex_block_handle);
   }
 
+
   // IndexBlock 数据落盘
   // key   : last_key
   // value : last_key 对应的 datablock 的 BlockHandle

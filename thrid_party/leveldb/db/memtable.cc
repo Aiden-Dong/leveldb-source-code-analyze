@@ -157,6 +157,7 @@ bool MemTable::Get(const LookupKey& key, std::string* value, Status* s) {
   //    - user_data.size + seqNum.size
   //    - userdata
   //    - seqnum
+  // 本质是调用 : FindGreaterOrEqual
   iter.Seek(memkey.data());
 
   // 数据已经找到

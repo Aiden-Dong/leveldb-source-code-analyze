@@ -402,7 +402,6 @@ void Version::ForEachOverlapping(Slice user_key,
   std::vector<FileMetaData*> tmp;
   tmp.reserve(files_[0].size());
 
-
   // level == 0, 需要判断所有的文件
   for (uint32_t i = 0; i < files_[0].size(); i++) {
     FileMetaData* f = files_[0][i];  // level-0 的 filemeta
@@ -413,6 +412,7 @@ void Version::ForEachOverlapping(Slice user_key,
       tmp.push_back(f);
     }
   }
+
   if (!tmp.empty()) {
 
     // 为了提高顺序， 按照文件的新旧排序
@@ -464,15 +464,12 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k, std::string*
 
   // 用于 判断是否满足触发 compaction 的条件
   struct State {
-
     Saver saver;                     // 查询结果
-    GetStats* stats;                 // 用于标志每次查找数据时，首次查找且没有找到数据的 SST 文件，一般位于第0层
-                                     // 也可能不位于第0层
-
+    GetStats* stats;                 // 用于返回在本次查询中首次扫描但是没有找到数据的SST
     const ReadOptions* options;      // 读取选项
-    Slice ikey;                      // 用于匹配的 Key, internalkey
+    Slice ikey;                      // 用于查询的 internalkey
 
-    // 用于标志每次查找时， 最后一次访问的文件
+    // 实时标记当前最后一个扫描的SST
     FileMetaData* last_file_read;
     int last_file_read_level;
 
@@ -491,6 +488,7 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k, std::string*
     static bool Match(void* arg, int level, FileMetaData* f) {
       State* state = reinterpret_cast<State*>(arg);
 
+      // 在state中记录第一次查找数据但是查找失败的SST
       if (state->stats->seek_file == nullptr &&
           state->last_file_read != nullptr) {
         // 标志第一次用于查找，但是没有找到数据的SST,一般位于第0层
@@ -505,13 +503,13 @@ Status Version::Get(const ReadOptions& options, const LookupKey& k, std::string*
       // 从 sst 中查找对应的 internalkey
       // table_cache_ 中只返回 >= user_key 的第一个 key ,
       // 但是因为 sst 从小大大有序， 所以如果这个不是要寻找的数据， 则此 key 不在数据范围内
-      state->s = state->vset->table_cache_
-          ->Get(*state->options, f->number,f->file_size, state->ikey, &state->saver, SaveValue);
+      state->s = state->vset->table_cache_ ->Get(*state->options, f->number,f->file_size, state->ikey, &state->saver, SaveValue);
 
       if (!state->s.ok()) {
         state->found = true;
         return false;
       }
+
       switch (state->saver.state) {
         case kNotFound:
           return true;  // Keep searching in other files

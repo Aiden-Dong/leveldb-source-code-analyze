@@ -449,6 +449,7 @@ class ShardedLRUCache : public Cache {
 };
 }
 
+// max_open_files(1000) - 10
 Cache* NewLRUCache(size_t capacity) { return new ShardedLRUCache(capacity); }
 
 }  // namespace leveldb

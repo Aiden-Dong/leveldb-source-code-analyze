@@ -36,6 +36,7 @@ struct Table::Rep {
 };
 
 Status Table::Open(const Options& options, RandomAccessFile* file, uint64_t size, Table** table) {
+
   *table = nullptr;
 
   // 数据大小太小，不足以构建 Footer
@@ -66,14 +67,16 @@ Status Table::Open(const Options& options, RandomAccessFile* file, uint64_t size
 
   if (s.ok()) {
     Block* index_block = new Block(index_block_contents);  // 构造 index_block
+
     Rep* rep = new Table::Rep;
     rep->options = options;
     rep->file = file;
-    rep->metaindex_handle = footer.metaindex_handle();
-    rep->index_block = index_block;
+    rep->metaindex_handle = footer.metaindex_handle();  // 赋值语句
+    rep->index_block = index_block;    //
     rep->cache_id = (options.block_cache ? options.block_cache->NewId() : 0);
     rep->filter_data = nullptr;
     rep->filter = nullptr;
+
     *table = new Table(rep);
     // 填充 rep->filter
     (*table)->ReadMeta(footer);
@@ -185,7 +188,7 @@ Iterator* Table::BlockReader(void* arg, const ReadOptions& options, const Slice&
   Block* block = nullptr;
   Cache::Handle* cache_handle = nullptr;
 
-  // 解析 BlockHandler
+  //拿到 DataBlock索引信息， 解析 BlockHandler
   BlockHandle handle;
   Slice input = index_value;
   Status s = handle.DecodeFrom(&input);
@@ -260,7 +263,7 @@ Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg,
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
   iiter->Seek(k);   // key_ >= k
 
-  if (iiter->Valid()) {  // 找到这个数据
+  if (iiter->Valid()) {                          // 存在数据可能存在的datablock
     Slice handle_value = iiter->value();         // 定位到 datablock 的位置
     FilterBlockReader* filter = rep_->filter;    // 获得过滤器
     BlockHandle handle;

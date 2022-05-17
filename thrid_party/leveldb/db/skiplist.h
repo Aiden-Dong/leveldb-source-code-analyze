@@ -167,9 +167,9 @@ struct SkipList<Key, Comparator>::Node {
 
 // 创建具有n个指针，元素为key的,新的Node
 // 使用 Arena 分配一个内存区域, 使用定位new运算符将 node 填充到该区域中
+// 这里 typename SkipList<Key, Comparator>::Node* 表示SkipList<Key, Comparator>是一个类型
 template <typename Key, class Comparator>
-typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(
-    const Key& key, int height) {
+typename SkipList<Key, Comparator>::Node* SkipList<Key, Comparator>::NewNode(const Key& key, int height) {
   char* const node_memory = arena_->AllocateAligned(
       sizeof(Node) 
       + sizeof(std::atomic<Node*>) * (height - 1));  

@@ -1356,8 +1356,8 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key, std::string* va
     snapshot = versions_->LastSequence(); // 获取最后一个版本（比较的时候，版本越大，值越小）
   }
 
-  MemTable* mem = mem_;
-  MemTable* imm = imm_;
+  MemTable* mem = mem_;    // 当前在写的表
+  MemTable* imm = imm_;    //
   Version* current = versions_->current();
   mem->Ref();
   if (imm != nullptr) imm->Ref();
@@ -1369,14 +1369,13 @@ Status DBImpl::Get(const ReadOptions& options, const Slice& key, std::string* va
   // Unlock while reading from files and memtables
   {
     mutex_.Unlock();
-    // First look in the memtable, then in the immutable memtable (if any).
     LookupKey lkey(key, snapshot);
-    if (mem->Get(lkey, value, &s)) {
+    if (mem->Get(lkey, value, &s)) {                           // 从MemTable中读取数据
       // Done
-    } else if (imm != nullptr && imm->Get(lkey, value, &s)) {
+    } else if (imm != nullptr && imm->Get(lkey, value, &s)) {  // 从IMemTable中读取数据
       // Done
     } else {
-      s = current->Get(options, lkey, value, &stats);
+      s = current->Get(options, lkey, value, &stats);         // 从SST中读取数据
       have_stat_update = true;
     }
     mutex_.Lock();

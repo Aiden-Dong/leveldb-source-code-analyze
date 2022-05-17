@@ -34,14 +34,15 @@ Status BuildTable(const std::string& dbname,
                   Iterator* iter,
                   FileMetaData* meta) {
   Status s;
-  meta->file_size = 0;
-  iter->SeekToFirst();   // MemTable 迭代器初始化
 
-  std::string fname = TableFileName(dbname, meta->number); // 获取sst文件名称:{sst_number}.ldb
+  meta->file_size = 0;
+
+  iter->SeekToFirst();                                      // MemTable 迭代器初始化
+  std::string fname = TableFileName(dbname, meta->number);  // 获取sst文件名称:{sst_number}.ldb
 
   if (iter->Valid()) {
     WritableFile* file;
-    s = env->NewWritableFile(fname, &file);  // 创建sst文件刷写句柄
+    s = env->NewWritableFile(fname, &file);                 // 创建sst文件刷写句柄
 
     if (!s.ok()) {
       return s;
