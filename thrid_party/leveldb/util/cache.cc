@@ -110,10 +110,13 @@ class HandleTable {
    * @return 指向对应 key 元素的 LRUHandler 指针， 使用二维指针的原因，可能要进行修改操作
    */
   LRUHandle** FindPointer(const Slice& key, uint32_t hash) {
+
     LRUHandle** ptr = &list_[hash & (length_ - 1)];
+
     while (*ptr != nullptr && ((*ptr)->hash != hash || key != (*ptr)->key())) {
       ptr = &(*ptr)->next_hash;
     }
+
     return ptr;
   }
 
