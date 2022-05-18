@@ -63,8 +63,7 @@ Status TableCache::FindTable(uint64_t file_number, uint64_t file_size, Cache::Ha
   char buf[sizeof(file_number)];
   EncodeFixed64(buf, file_number);
   Slice key(buf, sizeof(buf));
-
-  *handle = cache_->Lookup(key);  // 从 cache 中找到这个文件的缓存
+  *handle = cache_->Lookup(key);    // 从 cache 中找到这个文件的缓存，key为文件编号file_number
 
   if (*handle == nullptr) {
 
@@ -155,11 +154,14 @@ Status TableCache::Get(const ReadOptions& options, uint64_t file_number, uint64_
                        void (*handle_result)(void*, const Slice&, const Slice&)) {
   Cache::Handle* handle = nullptr;
 
+  // 查找SST
   Status s = FindTable(file_number, file_size, &handle);
 
   if (s.ok()) {
+    // 获取SST的操作句柄Table
     Table* t = reinterpret_cast<TableAndFile*>(cache_->Value(handle))->table;
-    s = t->InternalGet(options, k, arg, handle_result);
+    // 从Table中查询对应的key
+    s = t->InternalGet(options, k, arg, handle_result);         //从Table中读取
     cache_->Release(handle);   // 拿到以后要及时释放， 防止内存溢出
   }
 

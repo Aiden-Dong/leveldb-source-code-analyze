@@ -259,22 +259,25 @@ Iterator* Table::NewIterator(const ReadOptions& options) const {
 Status Table::InternalGet(const ReadOptions& options, const Slice& k, void* arg, void (*handle_result)(void*, const Slice&,const Slice&)) {
   Status s;
 
-  // IndexBlock 迭代器
+  // 从IndexBlock中定位可能存在key的DataBlock位置
   Iterator* iiter = rep_->index_block->NewIterator(rep_->options.comparator);
-  iiter->Seek(k);   // key_ >= k
+  iiter->Seek(k);
 
-  if (iiter->Valid()) {                          // 存在数据可能存在的datablock
+  if (iiter->Valid()) {
     Slice handle_value = iiter->value();         // 定位到 datablock 的位置
     FilterBlockReader* filter = rep_->filter;    // 获得过滤器
     BlockHandle handle;
 
-    // 使用 Bloom 过滤器判断一下数据是否在这个 block 里面
+    // 使用 Bloom 过滤器判断一下数据是否在这个 DataBlock 里面
     if (filter != nullptr && handle.DecodeFrom(&handle_value).ok() && !filter->KeyMayMatch(handle.offset(), k)) {
       // Bloom 过滤器没有找到这个数据
     } else {
-      // 加载这个 block
+      // BloomFilter 也判断数据位于这个DataBlock中，那么数据存在的可能性非常大
+      // 现在进行读取DataBlock查找
+      // 在DataBlock中进行查找
       Iterator* block_iter = BlockReader(this, options, iiter->value());
       block_iter->Seek(k);
+
       if (block_iter->Valid()) {
         // 找到这个数据，调用回调函数
         (*handle_result)(arg, block_iter->key(), block_iter->value());
