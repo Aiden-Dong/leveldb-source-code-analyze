@@ -1,7 +1,7 @@
 #### Google LevelDB 源码阅读
 
-基于[1.20版本](https://github.com/google/leveldb/tree/v1.20
-)
+基于[1.20版本](https://github.com/google/leveldb/tree/v1.20)
+
 ---
 当前绝大多数的KV数据库都是基于LevelDB的设计思想:类似于RockesDB,HBase等。
 
